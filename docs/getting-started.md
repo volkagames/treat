@@ -6,16 +6,15 @@ Depend on the facade crate — it re-exports everything you need. The report typ
 [`erris`](https://crates.io/crates/erris) comes along as `leto::erris`, so you
 don't add it yourself.
 
-```toml
-[dependencies]
-leto = "0.19.6"
+```sh
+cargo add leto
 
 # pick your web framework:
-leto = { version = "0.19.6", features = ["actix"] }   # actix-web + middleware
+cargo add leto --features actix   # actix-web + middleware
 # or
-leto = { version = "0.19.6", features = ["axum"] }    # axum
+cargo add leto --features axum    # axum
 # or
-leto = { version = "0.19.6", features = ["poem"] }    # poem
+cargo add leto --features poem    # poem
 ```
 
 The crate builds on **stable Rust**. Only the optional `nightly-provide` feature
