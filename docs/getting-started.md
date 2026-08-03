@@ -8,14 +8,14 @@ don't add it yourself.
 
 ```toml
 [dependencies]
-leto = "0.19.5"
+leto = "0.19.6"
 
 # pick your web framework:
-leto = { version = "0.19.5", features = ["actix"] }   # actix-web + middleware
+leto = { version = "0.19.6", features = ["actix"] }   # actix-web + middleware
 # or
-leto = { version = "0.19.5", features = ["axum"] }    # axum
+leto = { version = "0.19.6", features = ["axum"] }    # axum
 # or
-leto = { version = "0.19.5", features = ["poem"] }    # poem
+leto = { version = "0.19.6", features = ["poem"] }    # poem
 ```
 
 The crate builds on **stable Rust**. Only the optional `nightly-provide` feature
@@ -23,27 +23,27 @@ requires a nightly toolchain.
 
 ### Feature flags
 
-| Feature              | Enables                                                               |
-| -------------------- | --------------------------------------------------------------------- |
-| `derive` _(default)_ | the `ApiError` / `ApiErrorCode` / `FromErrorMessage` macros           |
+| Feature              | Enables                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------- |
+| `derive` _(default)_ | the `ApiError` / `ApiErrorCode` / `FromErrorMessage` macros                                  |
 | `actix`              | actix-web response traits, extractors, middleware, telemetry, `response_get_api_error_actix` |
-| `actix-middleware`   | actix request id, logger, root span                                   |
-| `actix-telemetry`    | OpenTelemetry parent-context propagation for actix                    |
-| `axum`               | axum `IntoResponse`, extractors, `response_get_api_error`             |
-| `poem`               | poem `IntoResponse` + `ResponseError`, `response_get_api_error_poem`  |
-| `tower-middleware`   | tower request id + root span middleware for axum/poem                 |
-| `tower-telemetry`    | OpenTelemetry parent-context propagation for tower                    |
-| `serde-path`         | JSON body decoding with field pointers                                |
-| `validator`          | validation helpers that produce `errors[]` with field pointers        |
-| `validator-extract`  | `ApiValidated<T>` extractors; also enables `validator` + `serde-path` |
-| `meta-slots`         | ready-made typed `meta` payloads (`Pagination`, `RateLimit`)          |
-| `openapi`            | `utoipa::ToSchema` bounds on response data                            |
-| `spantrace`          | capture a `tracing` span-trace on every error                         |
-| `backtrace`          | capture a backtrace on every error                                    |
-| `verbose-error`      | always serialize the full cause chain to clients                      |
-| `error-status-500`   | default an unset error status to `500` instead of `200`               |
-| `rpc-status-header`  | add `X-RPC-Status: ok` / `error` to every framework response          |
-| `nightly-provide`    | `std::error::Error::provide` support (**requires nightly**)           |
+| `actix-middleware`   | actix request id, logger, root span                                                          |
+| `actix-telemetry`    | OpenTelemetry parent-context propagation for actix                                           |
+| `axum`               | axum `IntoResponse`, extractors, `response_get_api_error`                                    |
+| `poem`               | poem `IntoResponse` + `ResponseError`, `response_get_api_error_poem`                         |
+| `tower-middleware`   | tower request id + root span middleware for axum/poem                                        |
+| `tower-telemetry`    | OpenTelemetry parent-context propagation for tower                                           |
+| `serde-path`         | JSON body decoding with field pointers                                                       |
+| `validator`          | validation helpers that produce `errors[]` with field pointers                               |
+| `validator-extract`  | `ApiValidated<T>` extractors; also enables `validator` + `serde-path`                        |
+| `meta-slots`         | ready-made typed `meta` payloads (`Pagination`, `RateLimit`)                                 |
+| `openapi`            | `utoipa::ToSchema` bounds on response data                                                   |
+| `spantrace`          | capture a `tracing` span-trace on every error                                                |
+| `backtrace`          | capture a backtrace on every error                                                           |
+| `verbose-error`      | always serialize the full cause chain to clients                                             |
+| `error-status-500`   | default an unset error status to `500` instead of `200`                                      |
+| `rpc-status-header`  | add `X-RPC-Status: ok` / `error` to every framework response                                 |
+| `nightly-provide`    | `std::error::Error::provide` support (**requires nightly**)                                  |
 
 ## Your first handler
 

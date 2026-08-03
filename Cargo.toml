@@ -14,10 +14,10 @@ version = "0.19.6"
 
 [workspace.dependencies]
 erris = { version = "2.1" }
-leto-actix = { path = "crates/leto-actix", version = "=0.19.5" }
-leto-core = { path = "crates/leto-core", version = "=0.19.5" }
-leto-derive = { path = "crates/leto-derive", version = "=0.19.5" }
-leto-tower = { path = "crates/leto-tower", version = "=0.19.5" }
+leto-actix = { path = "crates/leto-actix", version = "=0.19.6" }
+leto-core = { path = "crates/leto-core", version = "=0.19.6" }
+leto-derive = { path = "crates/leto-derive", version = "=0.19.6" }
+leto-tower = { path = "crates/leto-tower", version = "=0.19.6" }
 
 [workspace.lints.clippy]
 enum_glob_use = "deny"
