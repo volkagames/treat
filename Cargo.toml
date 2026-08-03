@@ -10,7 +10,7 @@ keywords = ["api", "error", "http", "json", "rpc"]
 license = "MIT"
 repository = "https://github.com/volkagames/leto"
 rust-version = "1.85"
-version = "0.19.5"
+version = "0.19.6"
 
 [workspace.dependencies]
 erris = { version = "2.1" }
