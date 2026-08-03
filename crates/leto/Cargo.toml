@@ -4,7 +4,6 @@ categories.workspace = true
 description = "Typed API error codes in the response body, for JSON-over-HTTP services on actix, axum, and poem"
 edition.workspace = true
 keywords.workspace = true
-license-file = "../../LICENSE"
 license.workspace = true
 name = "leto"
 readme = "../../README.md"

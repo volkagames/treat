@@ -4,7 +4,6 @@ categories.workspace = true
 description = "tower middleware for leto on axum and poem: request id, root span, OpenTelemetry"
 edition.workspace = true
 keywords.workspace = true
-license-file = "../../LICENSE"
 license.workspace = true
 name = "leto-tower"
 repository.workspace = true

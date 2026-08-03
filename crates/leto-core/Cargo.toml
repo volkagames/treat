@@ -4,7 +4,6 @@ categories.workspace = true
 description = "Core implementation of the leto response envelope and typed errors; use the leto crate instead"
 edition.workspace = true
 keywords.workspace = true
-license-file = "../../LICENSE"
 license.workspace = true
 name = "leto-core"
 repository.workspace = true

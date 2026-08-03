@@ -4,7 +4,6 @@ categories.workspace = true
 description = "Derive macros for leto typed error enums; re-exported by the leto crate's derive feature"
 edition.workspace = true
 keywords.workspace = true
-license-file = "../../LICENSE"
 license.workspace = true
 name = "leto-derive"
 repository.workspace = true
