@@ -1,0 +1,33 @@
+[package]
+authors.workspace = true
+categories.workspace = true
+description = "tower middleware for leto on axum and poem: request id, root span, OpenTelemetry"
+edition.workspace = true
+keywords.workspace = true
+license-file = "../../LICENSE"
+license.workspace = true
+name = "leto-tower"
+repository.workspace = true
+resolver = "3"
+rust-version.workspace = true
+version.workspace = true
+
+[features]
+telemetry = ["dep:opentelemetry", "dep:tracing-opentelemetry"]
+
+[dependencies]
+http = "1"
+opentelemetry = { version = "0.32", optional = true }
+pin-project = "1"
+tower = { version = "0.5", features = ["util"] }
+tracing = { version = "0.1", features = ["log"] }
+tracing-opentelemetry = { version = "0.33", optional = true }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "rt"] }
+tower = { version = "0.5", features = ["util"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,19 @@
+[package]
+name = "leto-hygiene-renamed"
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish = false
+
+# Compile-only regression crate: the facade is depended on under a DIFFERENT name
+# (`envelope`), so generated code that hardcodes `leto::` fails to compile here.
+# Lives apart from `leto-hygiene` because cargo forbids depending on one path
+# crate under two names.
+
+[dependencies]
+envelope = { package = "leto", path = "../leto", features = ["derive"] }
+thiserror = "2"
+
+[lints]
+workspace = true

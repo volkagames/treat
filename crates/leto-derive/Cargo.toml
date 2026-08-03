@@ -1,0 +1,25 @@
+[package]
+authors.workspace = true
+categories.workspace = true
+description = "Derive macros for leto typed error enums; re-exported by the leto crate's derive feature"
+edition.workspace = true
+keywords.workspace = true
+license-file = "../../LICENSE"
+license.workspace = true
+name = "leto-derive"
+repository.workspace = true
+resolver = "3"
+rust-version.workspace = true
+version.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro-crate = { version = "3" }
+proc-macro2 = "1.0.107"
+quote = "1.0.47"
+syn = "3"
+
+[lints]
+workspace = true

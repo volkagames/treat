@@ -1,0 +1,6 @@
+/.cargo
+/.idea
+/.vscode
+/data
+/tmp
+target

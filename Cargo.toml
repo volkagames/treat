@@ -1,0 +1,29 @@
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
+authors = ["alfatm", "lenstr"]
+categories = ["web-programming", "web-programming::http-server"]
+edition = "2024"
+keywords = ["api", "error", "http", "json", "rpc"]
+license = "MIT"
+repository = "https://github.com/volkagames/leto"
+rust-version = "1.85"
+version = "0.19.5"
+
+[workspace.dependencies]
+erris = { version = "2.1" }
+leto-actix = { path = "crates/leto-actix", version = "=0.19.5" }
+leto-core = { path = "crates/leto-core", version = "=0.19.5" }
+leto-derive = { path = "crates/leto-derive", version = "=0.19.5" }
+leto-tower = { path = "crates/leto-tower", version = "=0.19.5" }
+
+[workspace.lints.clippy]
+enum_glob_use = "deny"
+perf = { level = "deny", priority = -1 }
+unused_async = "deny"
+unwrap_used = "deny"
+
+[workspace.lints.rust]
+double_negations = "deny"

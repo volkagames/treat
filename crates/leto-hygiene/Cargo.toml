@@ -1,0 +1,22 @@
+[package]
+name = "leto-hygiene"
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish = false
+
+# Compile-only regression crate for derive-macro path hygiene (F5). It depends on
+# `leto` WITHOUT a direct `erris` dependency and WITHOUT importing the prelude,
+# so any bare `ApiResponse`/`erris` in generated code fails to compile here.
+
+[dependencies]
+leto = { path = "../leto", features = ["derive"] }
+
+# A core-only dependant: `leto-core` + `leto-derive` with no facade in scope.
+leto-core = { path = "../leto-core" }
+leto-derive = { path = "../leto-derive" }
+thiserror = "2"
+
+[lints]
+workspace = true

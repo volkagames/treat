@@ -1,0 +1,86 @@
+[package]
+authors.workspace = true
+categories.workspace = true
+description = "Typed API error codes in the response body, for JSON-over-HTTP services on actix, axum, and poem"
+edition.workspace = true
+keywords.workspace = true
+license-file = "../../LICENSE"
+license.workspace = true
+name = "leto"
+readme = "../../README.md"
+repository.workspace = true
+resolver = "3"
+rust-version.workspace = true
+version.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+actix = ["leto-core/actix", "actix-middleware", "actix-telemetry"]
+actix-middleware = ["dep:leto-actix"]
+actix-telemetry = ["actix-middleware", "leto-actix/telemetry"]
+axum = ["leto-core/axum"]
+backtrace = ["leto-core/backtrace"]
+default = ["derive"]
+derive = ["dep:leto-derive"]
+error-status-500 = ["leto-core/error-status-500"]
+meta-slots = ["leto-core/meta-slots"]
+nightly-provide = ["leto-core/nightly-provide"]
+openapi = ["leto-core/openapi"]
+poem = ["leto-core/poem"]
+rpc-status-header = ["leto-core/rpc-status-header"]
+serde-path = ["leto-core/serde-path"]
+spantrace = ["leto-core/spantrace"]
+tower-middleware = ["dep:leto-tower"]
+tower-telemetry = ["tower-middleware", "leto-tower/telemetry"]
+validator = ["leto-core/validator"]
+validator-extract = ["leto-core/validator-extract"]
+verbose-error = ["leto-core/verbose-error"]
+
+[dependencies]
+leto-actix = { workspace = true, optional = true }
+leto-core = { workspace = true }
+leto-derive = { workspace = true, optional = true }
+leto-tower = { workspace = true, optional = true }
+
+[dev-dependencies]
+actix-web = "4.11"
+axum = "0.8"
+criterion = "0.8"
+erris = { workspace = true }
+log = "0.4.33"
+poem = "3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt"] }
+tracing = { version = "0.1", features = [
+	"std",
+	"attributes",
+	"tracing-attributes",
+	"log",
+	"async-await",
+	"max_level_debug",
+	"release_max_level_info",
+	"valuable",
+] }
+tracing-subscriber = { version = "0.3.23", features = [
+	"json",
+	"registry",
+	"env-filter",
+] }
+triomphe = "0.1.16"
+utoipa = { version = "5.5.0", features = ["axum_extras"] }
+validator = { version = "0.20", features = ["derive"] }
+
+[[bench]]
+name = "bench_box_vs_arc"
+harness = false
+
+[[bench]]
+name = "bench_error_response"
+harness = false
+
+[lints]
+workspace = true
