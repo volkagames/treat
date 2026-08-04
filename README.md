@@ -1,6 +1,6 @@
-# Leto
+# treat
 
-`leto` is a Rust crate for RPC-style responses over HTTP.
+`treat` is a Rust crate for RPC-style responses over HTTP.
 
 The closer references are gRPC, where transport delivery and the RPC result are
 separate, and GraphQL, where execution failures are returned in the response
@@ -9,7 +9,7 @@ body through `errors[]`.
 It is not JSON:API. JSON:API is a large specification: a document format for
 resources with typed identity, relationships, compound documents, sparse
 fieldsets, sorting, pagination and filtering rules, and its own media type with
-content negotiation. Adopting it means adopting all of that. leto is a plain
+content negotiation. Adopting it means adopting all of that. treat is a plain
 response format — one small envelope, an operation result inside it.
 
 ## Purpose
@@ -23,7 +23,7 @@ Most service APIs have more outcomes than the HTTP status registry can express:
 - `invalid_email`
 - `quota_exceeded`
 
-`leto` follows the RPC-over-HTTP boundary: HTTP describes delivery, while the
+`treat` follows the RPC-over-HTTP boundary: HTTP describes delivery, while the
 JSON envelope describes the operation result.
 
 ## Contract
@@ -89,7 +89,7 @@ a complete JSON envelope, the exchange succeeded. A domain refusal such as
 
 This is different from REST, where methods, status codes, cache behavior,
 resource URIs, and intermediaries are part of the application contract. REST is
-the right model for resource-oriented APIs and distributed hypermedia. `leto`
+the right model for resource-oriented APIs and distributed hypermedia. `treat`
 targets JSON-over-HTTP operations where service-specific failures often do not
 fit the HTTP status registry.
 
@@ -121,7 +121,7 @@ be visible to intermediaries:
 `ApiError` supports this as a transport hint:
 
 ```rust
-let err = leto::error("invalid_email").with_status(422);
+let err = treat::error("invalid_email").with_status(422);
 ```
 
 The framework adapter applies that status. It is not serialized into the body
@@ -147,7 +147,7 @@ delivery semantics.
 ## Quick Example
 
 ```rust
-use leto::prelude::*;
+use treat::prelude::*;
 
 fn find_user(id: u64) -> Result<ApiResponse<User>, ApiError> {
     let user = db_lookup(id).ok_or_api_error("user_not_found")?;
@@ -173,15 +173,15 @@ The handler uses ordinary `?` flow. `Option`, `bool`, `Result<T, E>`, and
 ### Typed error codes
 
 Use `ApiErrorCode` for the wire contract and keep handler results typed as
-`leto::ApiError<ApiErrorCode>`.
+`treat::ApiError<ApiErrorCode>`.
 
 ```rust
 use serde::{Deserialize, Serialize};
 
-pub type ApiError = leto::ApiError<ApiErrorCode>;
+pub type ApiError = treat::ApiError<ApiErrorCode>;
 
 #[allow(non_camel_case_types)]
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, leto::ApiErrorCode)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, treat::ApiErrorCode)]
 pub enum ApiErrorCode {
     database_error,
     illegal_session,
@@ -191,9 +191,9 @@ pub enum ApiErrorCode {
     unauthorized,
 }
 
-pub async fn info() -> Result<leto::ApiResponse<InfoResponse>, ApiError> {
+pub async fn info() -> Result<treat::ApiResponse<InfoResponse>, ApiError> {
     let info = load_info().await.wrap_api_error(ApiErrorCode::database_error)?;
-    Ok(leto::success(info))
+    Ok(treat::success(info))
 }
 ```
 
@@ -215,26 +215,26 @@ pub async fn info() -> Result<leto::ApiResponse<InfoResponse>, ApiError> {
 
 ## Workspace Layout
 
-| Crate                               | Purpose                                                                   |
-| ----------------------------------- | ------------------------------------------------------------------------- |
-| [`leto`](crates/leto)               | Facade crate. Depend on this in applications.                             |
-| [`leto-core`](crates/leto-core)     | Envelope, errors, conversions, adapters, extractors, validation support.  |
-| [`leto-derive`](crates/leto-derive) | Proc macros for typed errors and response parsing.                        |
-| [`leto-actix`](crates/leto-actix)   | actix-web middleware: logger, request id, root span, OpenTelemetry.       |
-| [`leto-tower`](crates/leto-tower)   | tower middleware for axum and poem: request id, root span, OpenTelemetry. |
+| Crate                                 | Purpose                                                                   |
+| ------------------------------------- | ------------------------------------------------------------------------- |
+| [`treat`](crates/treat)               | Facade crate. Depend on this in applications.                             |
+| [`treat-core`](crates/treat-core)     | Envelope, errors, conversions, adapters, extractors, validation support.  |
+| [`treat-derive`](crates/treat-derive) | Proc macros for typed errors and response parsing.                        |
+| [`treat-actix`](crates/treat-actix)   | actix-web middleware: logger, request id, root span, OpenTelemetry.       |
+| [`treat-tower`](crates/treat-tower)   | tower middleware for axum and poem: request id, root span, OpenTelemetry. |
 
 Two more members are not published. They are compile-only: the derive macros must
-emit absolute paths, so a bare `ApiResponse` or a hardcoded `leto::` breaks the
+emit absolute paths, so a bare `ApiResponse` or a hardcoded `treat::` breaks the
 build here instead of downstream.
 
-| Crate                                                 | Checks that generated code resolves                   |
-| ----------------------------------------------------- | ----------------------------------------------------- |
-| [`leto-hygiene`](crates/leto-hygiene)                 | without the prelude, and without the facade in scope. |
-| [`leto-hygiene-renamed`](crates/leto-hygiene-renamed) | when the facade is renamed to `envelope`.             |
+| Crate                                                   | Checks that generated code resolves                   |
+| ------------------------------------------------------- | ----------------------------------------------------- |
+| [`treat-hygiene`](crates/treat-hygiene)                 | without the prelude, and without the facade in scope. |
+| [`treat-hygiene-renamed`](crates/treat-hygiene-renamed) | when the facade is renamed to `envelope`.             |
 
 ## Features
 
-The `leto` facade re-exports functionality behind feature flags.
+The `treat` facade re-exports functionality behind feature flags.
 
 | Feature             | Enables                                                             |
 | ------------------- | ------------------------------------------------------------------- |
@@ -263,7 +263,7 @@ The crate builds on stable Rust unless `nightly-provide` is enabled.
 ## Documentation
 
 - Handbook: [`docs/`](docs/), starting at [`docs/README.md`](docs/README.md).
-- API reference: [docs.rs/leto](https://docs.rs/leto).
+- API reference: [docs.rs/treat](https://docs.rs/treat).
 
 ## Development
 
@@ -280,6 +280,6 @@ RUSTFLAGS= cargo +stable test
 
 MIT. See [`LICENSE`](LICENSE).
 
-`leto-actix` is an adapted derivative of
+`treat-actix` is an adapted derivative of
 [`tracing-actix-web`](https://github.com/LukeMathWalker/tracing-actix-web) by
 Luca Palmieri, used under the MIT License. See [`NOTICE`](NOTICE).

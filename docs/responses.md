@@ -19,13 +19,13 @@ when set, and a plain failure is `{"errors":[...]}`.
 ## Building responses
 
 ```rust
-use leto::prelude::*;
+use treat::prelude::*;
 
 // success: data only
 let ok = success(vec![1, 2, 3]);
 
 // failure: errors only (from an ErrorMessage, an ApiError, or an iterator)
-let bad: ApiResponse<()> = leto::error("nope").into();
+let bad: ApiResponse<()> = treat::error("nope").into();
 
 // builders (chainable):
 let full = ApiResponse::<i32, String>::from(1)
@@ -47,7 +47,7 @@ That last one is why handlers can `return result.into()`.
 `meta` is a typed slot — use a struct for structured metadata:
 
 ```rust
-use leto::prelude::*;
+use treat::prelude::*;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -65,7 +65,7 @@ Attach a typed meta with `success_with_meta` (`success` alone fixes the meta typ
 to `NoMeta`):
 
 ```rust,ignore
-use leto::{success_with_meta, meta_slots::Pagination};
+use treat::{success_with_meta, meta_slots::Pagination};
 
 let page = Pagination::new(2, 20, 137); // page 2, 20/page, 137 total → total_pages = 7
 let resp = success_with_meta(users, page);
@@ -74,11 +74,11 @@ let resp = success_with_meta(users, page);
 
 ## Reading a response (client side)
 
-When you're the _consumer_ of a `leto` service, deserialize into
+When you're the _consumer_ of a `treat` service, deserialize into
 `ApiResponse<T>` and inspect it:
 
 ```rust
-use leto::prelude::*;
+use treat::prelude::*;
 
 let resp: ApiResponse<String> =
     serde_json::from_str(r#"{"errors":[{"code":"user_not_found"}]}"#).expect("json");
@@ -100,7 +100,7 @@ From<&ErrorMessage> + Into<erris::Report>` (pair this with
   the first error / the missing `data`.
 
 ```rust
-use leto::prelude::*;
+use treat::prelude::*;
 
 let resp: ApiResponse<i32> = success(42);
 assert_eq!(resp.inner_data().expect("data"), &42);

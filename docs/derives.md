@@ -9,7 +9,7 @@ Turn an enum into a code usable as `ApiError<YourEnum>`. You get exhaustiveness
 (the compiler lists your error space) and interpolated messages.
 
 ```rust
-use leto::prelude::*;
+use treat::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, ApiErrorCode)]
 enum OrderError {
@@ -37,7 +37,7 @@ Generated: `Display` (the code), `From<YourEnum> for ApiError<YourEnum>`, and
 > **Set `#[code(...)]` explicitly.** The default wire code is the variant name
 > verbatim — `NotFound`, not `not_found` — which clashes with the `snake_case`
 > codes used everywhere else in this library and in most APIs. The default exists
-> for backwards compatibility and is *not* a recommendation: spell the wire code
+> for backwards compatibility and is _not_ a recommendation: spell the wire code
 > out on every variant so it stays stable when the Rust variant is renamed.
 
 **When to use:** your own service's error space, where you want typed codes and
@@ -49,8 +49,8 @@ Map an existing error enum onto `ApiError<&'static str>`. The variant's `Display
 becomes the message; `#[code(...)]` sets the wire code.
 
 ```rust
-use leto::prelude::*;
-use leto::erris;
+use treat::prelude::*;
+use treat::erris;
 use thiserror::Error;
 
 #[derive(Debug, Error, ApiError)]
@@ -85,7 +85,7 @@ The reverse direction, for clients. Map a wire `ErrorMessage` (or `ApiError`)
 back onto your enum by `code`; `#[code("_")]` is the catch-all.
 
 ```rust
-use leto::prelude::*;
+use treat::prelude::*;
 
 #[derive(Debug, FromErrorMessage)]
 enum ClientError {
@@ -108,7 +108,7 @@ if let Some(err) = resp.err() {
 Generated: `From<ErrorMessage>`, `From<&ErrorMessage>`, `From<ApiError>`,
 `From<&ApiError>`.
 
-**When to use:** consuming a `leto` service and wanting to `match` on typed
+**When to use:** consuming a `treat` service and wanting to `match` on typed
 errors instead of raw code strings. Pairs with `ApiResponse::inner`/`into_inner`.
 
 ## Choosing between them

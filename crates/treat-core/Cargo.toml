@@ -1,0 +1,49 @@
+[package]
+authors.workspace = true
+categories.workspace = true
+description = "Core implementation of the treat response envelope and typed errors; use the treat crate instead"
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+name = "treat-core"
+repository.workspace = true
+resolver = "3"
+rust-version.workspace = true
+version.workspace = true
+
+[features]
+actix = ["dep:actix-web"]
+axum = ["dep:axum"]
+backtrace = ["erris/backtrace"]
+# Default the transport status of an error with no explicit status to `500`
+# instead of `200`. Does not affect errors that set a status explicitly.
+error-status-500 = []
+meta-slots = []
+nightly-provide = []
+openapi = ["dep:utoipa"]
+poem = ["dep:poem"]
+# Emit an out-of-band `X-RPC-Status: ok|error` header on every response, so a
+# caller can tell success from failure without parsing the envelope.
+rpc-status-header = []
+serde-path = ["dep:serde_path_to_error"]
+spantrace = ["erris/spantrace"]
+validator = ["dep:validator", "validator/derive"]
+# Auto-validating request extractor (`ApiValidated<T>` -> `Validated<T>`).
+# The `FromRequest` impls additionally require an `axum`/`actix` feature.
+validator-extract = ["validator", "serde-path"]
+verbose-error = []
+
+[dependencies]
+actix-web = { version = "4.11", optional = true }
+axum = { version = "0.8", optional = true }
+cfg_block = "0.2"
+erris = { workspace = true }
+poem = { version = "3", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_path_to_error = { version = "0.1", optional = true }
+utoipa = { version = "5.5.0", features = ["axum_extras"], optional = true }
+validator = { version = "0.20", optional = true }
+
+[lints]
+workspace = true

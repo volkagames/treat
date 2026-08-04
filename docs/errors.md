@@ -14,10 +14,10 @@
 ## Creating errors
 
 ```rust
-use leto::prelude::*;
-use leto::erris;
+use treat::prelude::*;
+use treat::erris;
 
-let err = leto::error("payment_failed")
+let err = treat::error("payment_failed")
     .with_message("the card was declined")
     .with_meta(serde_json::json!({ "card_last4": "4242" }))
     .with_error(erris::report!("gateway timeout"));
@@ -47,9 +47,9 @@ Tell the client _where_ the error is, JSON:API-style, with a `source` object —
 handy for validation errors:
 
 ```rust
-use leto::prelude::*;
+use treat::prelude::*;
 
-let err = leto::error("invalid")
+let err = treat::error("invalid")
     .with_message("must be a valid email")
     .with_pointer("/data/attributes/email"); // JSON Pointer into the request body
 
@@ -70,9 +70,9 @@ For Problem-Details interop you can also attach a stable documentation URI and a
 per-occurrence id (often the request id):
 
 ```rust
-use leto::prelude::*;
+use treat::prelude::*;
 
-let err = leto::error("rate_limited")
+let err = treat::error("rate_limited")
     .with_type("https://errors.example.com/rate-limited") // link to docs
     .with_instance("req-01H..");                          // this occurrence
 ```
@@ -88,7 +88,7 @@ that matches what you have:
 ### `Option<T>` → `OkOrError`
 
 ```rust
-use leto::prelude::*;
+use treat::prelude::*;
 # fn demo(cache: std::collections::HashMap<u64, String>, id: u64) -> Result<String, ApiError> {
 let value = cache.get(&id).cloned().ok_or_api_error("cache_miss")?;
 # Ok(value) }
@@ -97,7 +97,7 @@ let value = cache.get(&id).cloned().ok_or_api_error("cache_miss")?;
 `bool` implements it too, which makes guard clauses one-liners:
 
 ```rust
-use leto::prelude::*;
+use treat::prelude::*;
 # fn demo(is_admin: bool) -> Result<(), ApiError> {
 is_admin.ok_or_api_error("forbidden")?;
 # Ok(()) }
@@ -109,7 +109,7 @@ The foreign error is preserved as the `source`, so it still appears in logs and
 verbose output.
 
 ```rust
-use leto::prelude::*;
+use treat::prelude::*;
 # fn demo(raw: &str) -> Result<u16, ApiError> {
 let port = raw.parse::<u16>().wrap_api_error("bad_port")?;
 // or attach a message:
@@ -122,8 +122,8 @@ let port = raw.parse::<u16>().wrap_api_error_with(|| ("bad_port", format!("got {
 ### `erris::Report` → `WithErrorCode`
 
 ```rust
-use leto::prelude::*;
-use leto::erris;
+use treat::prelude::*;
+use treat::erris;
 
 let err = erris::report!("disk full").with_error_code("storage_error");
 ```
@@ -135,12 +135,12 @@ foreign error as the source. You can build arbitrarily deep chains mixing
 `ApiError`s and plain reports:
 
 ```rust
-use leto::prelude::*;
-use leto::erris;
+use treat::prelude::*;
+use treat::erris;
 
-let err = leto::error("checkout_failed")
+let err = treat::error("checkout_failed")
     .with_error(erris::report!("charge declined"))
-    .with_error(leto::error("insufficient_funds"));
+    .with_error(treat::error("insufficient_funds"));
 
 // collect_messages walks the chain and pulls out every ApiError code:
 let chain = err.collect_messages();
@@ -157,10 +157,10 @@ in your logs, not the client payload. This is the safe default.
   staging, never in production if causes may leak internals).
 
 ```rust
-use leto::prelude::*;
-use leto::erris;
+use treat::prelude::*;
+use treat::erris;
 
-let err = leto::error("db_unavailable").with_error(erris::report!("connection refused"));
+let err = treat::error("db_unavailable").with_error(erris::report!("connection refused"));
 
 let brief = err.into_api_response::<()>();          // 1 error: db_unavailable
 assert_eq!(brief.first_error_code(), Some("db_unavailable"));
@@ -176,8 +176,8 @@ location to the error as it bubbles up, so verbose / `Debug` output shows the fu
 path it travelled:
 
 ```rust
-use leto::prelude::*;
-# fn inner() -> Result<(), ApiError> { Err(leto::error("boom")) }
+use treat::prelude::*;
+# fn inner() -> Result<(), ApiError> { Err(treat::error("boom")) }
 fn outer() -> Result<(), ApiError> {
     inner().track_api_error()?; // adds this frame
     Ok(())
@@ -199,10 +199,10 @@ status: they report **500** instead of 200. Useful when clients or monitoring
 only look at the status line, so an unhandled failure does not read as success.
 
 ```toml
-leto = { version = "*", features = ["error-status-500"] }
+treat = { version = "*", features = ["error-status-500"] }
 ```
 
-Two things it does *not* change:
+Two things it does _not_ change:
 
 - **An explicit status still wins.** `.with_status(404)` and `.with_code_status()`
   are untouched; only the unset case moves.

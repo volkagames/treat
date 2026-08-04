@@ -1183,103 +1183,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
-name = "leto"
-version = "0.19.6"
-dependencies = [
- "actix-web",
- "axum",
- "criterion",
- "erris",
- "leto-actix",
- "leto-core",
- "leto-derive",
- "leto-tower",
- "log",
- "poem",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "triomphe",
- "utoipa",
- "validator",
-]
-
-[[package]]
-name = "leto-actix"
-version = "0.19.6"
-dependencies = [
- "actix-web",
- "leto-core",
- "opentelemetry",
- "pin-project",
- "tracing",
- "tracing-opentelemetry",
- "uuid",
-]
-
-[[package]]
-name = "leto-core"
-version = "0.19.6"
-dependencies = [
- "actix-web",
- "axum",
- "cfg_block",
- "erris",
- "poem",
- "serde",
- "serde_json",
- "serde_path_to_error",
- "utoipa",
- "validator",
-]
-
-[[package]]
-name = "leto-derive"
-version = "0.19.6"
-dependencies = [
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "syn 3.0.3",
-]
-
-[[package]]
-name = "leto-hygiene"
-version = "0.19.6"
-dependencies = [
- "leto",
- "leto-core",
- "leto-derive",
- "thiserror",
-]
-
-[[package]]
-name = "leto-hygiene-renamed"
-version = "0.19.6"
-dependencies = [
- "leto",
- "thiserror",
-]
-
-[[package]]
-name = "leto-tower"
-version = "0.19.6"
-dependencies = [
- "axum",
- "http 1.5.0",
- "opentelemetry",
- "pin-project",
- "tokio",
- "tower",
- "tracing",
- "tracing-opentelemetry",
- "uuid",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2280,6 +2183,103 @@ dependencies = [
  "tracing-core",
  "tracing-log",
  "tracing-serde",
+]
+
+[[package]]
+name = "treat"
+version = "0.19.6"
+dependencies = [
+ "actix-web",
+ "axum",
+ "criterion",
+ "erris",
+ "log",
+ "poem",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "treat-actix",
+ "treat-core",
+ "treat-derive",
+ "treat-tower",
+ "triomphe",
+ "utoipa",
+ "validator",
+]
+
+[[package]]
+name = "treat-actix"
+version = "0.19.6"
+dependencies = [
+ "actix-web",
+ "opentelemetry",
+ "pin-project",
+ "tracing",
+ "tracing-opentelemetry",
+ "treat-core",
+ "uuid",
+]
+
+[[package]]
+name = "treat-core"
+version = "0.19.6"
+dependencies = [
+ "actix-web",
+ "axum",
+ "cfg_block",
+ "erris",
+ "poem",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "utoipa",
+ "validator",
+]
+
+[[package]]
+name = "treat-derive"
+version = "0.19.6"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
+]
+
+[[package]]
+name = "treat-hygiene"
+version = "0.19.6"
+dependencies = [
+ "thiserror",
+ "treat",
+ "treat-core",
+ "treat-derive",
+]
+
+[[package]]
+name = "treat-hygiene-renamed"
+version = "0.19.6"
+dependencies = [
+ "thiserror",
+ "treat",
+]
+
+[[package]]
+name = "treat-tower"
+version = "0.19.6"
+dependencies = [
+ "axum",
+ "http 1.5.0",
+ "opentelemetry",
+ "pin-project",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-opentelemetry",
+ "uuid",
 ]
 
 [[package]]

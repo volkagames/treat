@@ -8,7 +8,7 @@ Bring the derives into scope. They live in the prelude (with the `derive`
 feature, which is on by default):
 
 ```rust
-use leto::prelude::*;
+use treat::prelude::*;
 ```
 
 If you disabled default features, re-enable `derive`.
@@ -28,7 +28,7 @@ utoipa::ToSchema`. Add `#[derive(utoipa::ToSchema)]` to the type you use as
 ## "`error` is ambiguous" / clashes with my own `error`
 
 The free function is intentionally **not** in the prelude. Call it fully
-qualified: `leto::error("code")`.
+qualified: `treat::error("code")`.
 
 ## My `ApiError` response only shows one error, but there's a cause chain
 

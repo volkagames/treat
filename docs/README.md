@@ -1,12 +1,12 @@
-# leto — handbook
+# treat — handbook
 
-Practical documentation for the `leto` crate: an HTTP response **envelope**
+Practical documentation for the `treat` crate: an HTTP response **envelope**
 (`{ data, meta, errors[] }`) with a **typed error model** for actix-web, axum
 and poem.
 
 This handbook is task-oriented — it describes what the crate can do and how to
 solve real problems in an application. For the API reference see
-[docs.rs](https://docs.rs/leto) (or `cargo doc --open`).
+[docs.rs](https://docs.rs/treat) (or `cargo doc --open`).
 
 ## Contents
 
@@ -21,7 +21,7 @@ solve real problems in an application. For the API reference see
 ## The one-minute version
 
 ```rust
-use leto::prelude::*;
+use treat::prelude::*;
 
 async fn get_user(id: u64) -> Result<ApiResponse<User>, ApiError> {
     let user = db::find(id).ok_or_api_error("user_not_found")?;   // Option -> ApiError
@@ -39,7 +39,7 @@ async fn get_user(id: u64) -> Result<ApiResponse<User>, ApiError> {
 ## Why not just `thiserror` + `IntoResponse`?
 
 That pattern is fine, but you re-implement the envelope, the error-to-JSON
-mapping and the observability glue in every service. `leto` gives you one
+mapping and the observability glue in every service. `treat` gives you one
 envelope, typed codes with derives, request extractors, and drop-in actix/tower
 middleware for request ids, tracing root spans, and OpenTelemetry. See the
 [cookbook](cookbook.md) for what that buys you day to day.

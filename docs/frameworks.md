@@ -1,6 +1,6 @@
 # Framework integration
 
-`leto` types implement the response traits of actix-web, axum and poem, so a
+`treat` types implement the response traits of actix-web, axum and poem, so a
 handler can just return `Result<ApiResponse<T>, ApiError>`.
 
 ## actix-web (`actix` feature)
@@ -11,7 +11,7 @@ handler can just return `Result<ApiResponse<T>, ApiError>`.
 
 ```rust,ignore
 use actix_web::{get, web, App, HttpServer};
-use leto::prelude::*;
+use treat::prelude::*;
 
 #[get("/users/{id}")]
 async fn get_user(id: web::Path<u64>) -> Result<ApiResponse<String>, ApiError> {
@@ -39,7 +39,7 @@ handler produces a valid envelope automatically.
 
 ```rust,ignore
 use axum::{routing::get, extract::Path, Router};
-use leto::prelude::*;
+use treat::prelude::*;
 
 async fn get_user(Path(id): Path<u64>) -> Result<ApiResponse<String>, ApiError> {
     let name = find_user(id).ok_or_api_error("user_not_found")?;
@@ -50,7 +50,7 @@ let app = Router::new().route("/users/{id}", get(get_user));
 ```
 
 ```rust,ignore
-use leto::response_get_api_error;
+use treat::response_get_api_error;
 
 // in a layer that inspects outgoing responses:
 if let Some(err) = response_get_api_error(&response) {
@@ -66,18 +66,18 @@ if let Some(err) = response_get_api_error(&response) {
 Every adapter stashes the error, so the same inspection works on all three; only
 the accessor differs, because the response types do:
 
-| Framework | Accessor                          |
-| --------- | --------------------------------- |
-| axum      | `response_get_api_error`          |
-| actix-web | `response_get_api_error_actix`    |
-| poem      | `response_get_api_error_poem`     |
+| Framework | Accessor                       |
+| --------- | ------------------------------ |
+| axum      | `response_get_api_error`       |
+| actix-web | `response_get_api_error_actix` |
+| poem      | `response_get_api_error_poem`  |
 
 The value is a `dyn ApiErrorHandler` — the code type is erased, so a service
 using a typed code enum is read the same way as one using the default. It
 exposes `code()`, `status()`, `has_status()`, `message()`, `meta()`,
 `error_source()`, `source()` and the `#[track_caller]` `location()`.
 
-`status()` is the *configured* value; the adapters run it through
+`status()` is the _configured_ value; the adapters run it through
 `resolve_status` before it reaches the wire, so an out-of-range one is reported
 here but replaced there.
 
@@ -90,7 +90,7 @@ here but replaced there.
 
 ```rust,ignore
 use poem::{get, handler, web::Path, Route};
-use leto::prelude::*;
+use treat::prelude::*;
 
 #[handler]
 async fn get_user(Path(id): Path<u64>) -> poem::Result<ApiResponse<String>> {
@@ -108,7 +108,7 @@ a given error serializes to **byte-identical JSON** regardless of framework
 ## Observability middleware (actix)
 
 The `actix-middleware` feature ships a tracing-aware logger — a trimmed-down,
-`leto`-flavoured take on `tracing-actix-web`:
+`treat`-flavoured take on `tracing-actix-web`:
 
 - [`Logger`] — wraps each request in a root span, generates a request-id, and
   logs the outcome (calls your error handler on failure).
@@ -120,7 +120,7 @@ The `actix-middleware` feature ships a tracing-aware logger — a trimmed-down,
 
 ```rust,ignore
 use actix_web::App;
-use leto::{Logger, error_log};
+use treat::{Logger, error_log};
 
 // default: logs errors at error!(), successes at debug!()
 let app = App::new().wrap(Logger::default());
@@ -134,7 +134,7 @@ let app = App::new().wrap(Logger::with_error_logger(|err| {
 Extract the request-id or root span in a handler:
 
 ```rust,ignore
-use leto::{RequestId, RootSpan};
+use treat::{RequestId, RootSpan};
 
 async fn handler(id: RequestId, span: RootSpan) -> Result<ApiResponse<()>, ApiError> {
     tracing::info!(%*id, "handling request");
@@ -150,7 +150,7 @@ stitch together across services.
 ## Observability middleware (tower: axum / poem)
 
 The `tower-middleware` feature ships the same request-id + root span for
-`tower`-based frameworks, exposed under `leto::tower`:
+`tower`-based frameworks, exposed under `treat::tower`:
 
 - `TraceLayer` — a [`tower::Layer`] that, per request, generates a `RequestId`
   (stored in the request extensions), opens the `"HTTP request"` root span with
@@ -159,7 +159,7 @@ The `tower-middleware` feature ships the same request-id + root span for
   `Extension<RequestId>` (the layer inserts it into the request extensions).
 
 ```rust,ignore
-use leto::tower::{RequestId, TraceLayer};
+use treat::tower::{RequestId, TraceLayer};
 use axum::{Router, routing::get, extract::Extension};
 
 async fn handler(Extension(id): Extension<RequestId>) -> String {
@@ -176,22 +176,22 @@ poem can consume the same layer through its tower-compat shim:
 
 ```rust,ignore
 use poem::middleware::TowerLayerCompatExt;
-let app = route.with(leto::tower::TraceLayer::new().compat());
+let app = route.with(treat::tower::TraceLayer::new().compat());
 ```
 
 ## Request extractors
 
 The `serde-path` feature exposes framework-specific JSON extractors under
-`leto::extract_actix` and `leto::extract_axum`:
+`treat::extract_actix` and `treat::extract_axum`:
 
 - `ApiJson<T>` parses the request body with `deserialize_body`, so malformed JSON
-  or a type mismatch becomes a `leto` envelope with an `invalid_body` error.
+  or a type mismatch becomes a `treat` envelope with an `invalid_body` error.
 - `ApiValidated<T>` additionally requires `validator-extract`; it parses,
   validates with `validator::Validate`, and yields `Validated<T>`.
 
 ```rust,ignore
-use leto::extract_axum::ApiValidated;
-use leto::prelude::*;
+use treat::extract_axum::ApiValidated;
+use treat::prelude::*;
 
 async fn create_user(ApiValidated(body): ApiValidated<CreateUser>) -> ApiResponse<User> {
     success(insert_user(body.into_inner()))
