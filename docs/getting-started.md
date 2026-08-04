@@ -3,18 +3,18 @@
 ## Install
 
 Depend on the facade crate — it re-exports everything you need. The report type
-[`erris`](https://crates.io/crates/erris) comes along as `leto::erris`, so you
+[`erris`](https://crates.io/crates/erris) comes along as `treat::erris`, so you
 don't add it yourself.
 
 ```sh
-cargo add leto
+cargo add treat
 
 # pick your web framework:
-cargo add leto --features actix   # actix-web + middleware
+cargo add treat --features actix   # actix-web + middleware
 # or
-cargo add leto --features axum    # axum
+cargo add treat --features axum    # axum
 # or
-cargo add leto --features poem    # poem
+cargo add treat --features poem    # poem
 ```
 
 The crate builds on **stable Rust**. Only the optional `nightly-provide` feature
@@ -50,7 +50,7 @@ A handler returns `ApiResponse<T>` on success or `ApiError` on failure. The `?`
 operator does the conversion:
 
 ```rust
-use leto::prelude::*;
+use treat::prelude::*;
 
 fn get_user(id: u64) -> Result<ApiResponse<String>, ApiError> {
     let name = lookup(id).ok_or_api_error("user_not_found")?;
@@ -68,14 +68,14 @@ fn lookup(id: u64) -> Option<String> {
 
 ## The prelude
 
-`use leto::prelude::*;` brings in the common surface:
+`use treat::prelude::*;` brings in the common surface:
 
 - types — `ApiResponse`, `ApiError`, `ErrorMessage`;
 - constructors — `success`, `failure`;
 - the `?`-extensions — `OkOrError`, `WrapApiError`, `WithErrorCode`, `ApiErrorTrack`;
 - the derive macros (with `derive`).
 
-The free function `leto::error(code)` is **not** in the prelude — call it fully
+The free function `treat::error(code)` is **not** in the prelude — call it fully
 qualified to avoid clashing with your own `error` names.
 
 ## Where to go next
