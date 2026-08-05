@@ -87,7 +87,10 @@ where
     actix_web::dev::forward_ready!(service);
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
-        req.extensions_mut().insert(RequestId::generate());
+        // Adopt the caller's id when present so one identifier spans the whole
+        // call chain; otherwise start a new one here.
+        let request_id = RequestId::from_headers(req.headers());
+        req.extensions_mut().insert(request_id);
         let root_span = RootSpanType::on_request_start(&req);
 
         let root_span_wrapper = RootSpan::new(root_span.clone());
@@ -99,6 +102,7 @@ where
             fut,
             error_handler: self.error_handler.clone(),
             span: root_span,
+            request_id,
             _root_span_type: std::marker::PhantomData,
         }
     }
@@ -111,6 +115,7 @@ pub struct TracingResponse<F, RootSpanType, L: Fn(&actix_web::Error)> {
     fut: F,
     error_handler: L,
     span: Span,
+    request_id: RequestId,
     _root_span_type: std::marker::PhantomData<RootSpanType>,
 }
 
@@ -137,11 +142,12 @@ where
 
         let fut = this.fut;
         let span = this.span;
+        let request_id = *this.request_id;
 
         span.in_scope(|| {
             match fut.poll(cx) {
                 Poll::Pending => Poll::Pending,
-                Poll::Ready(outcome) => {
+                Poll::Ready(mut outcome) => {
                     RootSpanType::on_request_end(Span::current(), &outcome);
 
                     match &outcome {
@@ -152,6 +158,16 @@ where
                             }
                         }
                         Err(err) => error_handle(err),
+                    }
+
+                    // A handler that set the header itself has the final say; only
+                    // fill in the gap so the caller can always correlate the
+                    // response with a log.
+                    if let Ok(response) = &mut outcome {
+                        let headers = response.headers_mut();
+                        if !headers.contains_key(&crate::X_REQUEST_ID) {
+                            headers.insert(crate::X_REQUEST_ID, request_id.to_header_value());
+                        }
                     }
 
                     Poll::Ready(outcome.map(|service_response| {

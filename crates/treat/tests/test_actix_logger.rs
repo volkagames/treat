@@ -7,9 +7,9 @@
 //! into the generic arm and `error_code` disappears from the logs.
 #![cfg(feature = "actix")]
 
-use treat::error;
 use std::sync::{Arc, Mutex};
 use tracing_subscriber::layer::SubscriberExt;
+use treat::error;
 
 #[derive(Clone, Debug, PartialEq)]
 enum MyCode {

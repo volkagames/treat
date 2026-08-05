@@ -64,8 +64,8 @@ fn with_status_sets_the_response_status() {
 #[cfg(feature = "derive")]
 #[test]
 fn error_message_roundtrips_into_a_typed_error() {
-    use treat::{ErrorMessage, FromErrorMessage};
     use thiserror::Error;
+    use treat::{ErrorMessage, FromErrorMessage};
 
     #[derive(Error, FromErrorMessage, Debug, PartialEq)]
     enum SomeApiError {

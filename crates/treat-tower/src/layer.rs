@@ -54,7 +54,9 @@ where
     }
 
     fn call(&mut self, mut req: Request<ReqBody>) -> Self::Future {
-        let request_id = RequestId::generate();
+        // Adopt the caller's id when present so one identifier spans the whole
+        // call chain; otherwise start a new one here.
+        let request_id = RequestId::from_headers(req.headers());
         req.extensions_mut().insert(request_id);
 
         let span = root_span(&req, request_id);
@@ -69,17 +71,22 @@ where
             self.inner.call(req)
         };
 
-        TraceFuture { future, span }
+        TraceFuture {
+            future,
+            span,
+            request_id,
+        }
     }
 }
 
-/// Future for [`TraceService`]: records the response status on the span when the
-/// inner future resolves.
+/// Future for [`TraceService`]: records the response status on the span and
+/// echoes the request id back to the caller when the inner future resolves.
 #[pin_project]
 pub struct TraceFuture<F> {
     #[pin]
     future: F,
     span: Span,
+    request_id: RequestId,
 }
 
 impl<F, ResBody, E> Future for TraceFuture<F>
@@ -91,9 +98,15 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let _guard = this.span.enter();
-        let outcome = std::task::ready!(this.future.poll(cx));
-        if let Ok(response) = &outcome {
+        let mut outcome = std::task::ready!(this.future.poll(cx));
+        if let Ok(response) = &mut outcome {
             record_status(this.span, response.status());
+            // A handler that set the header itself has the final say; only fill in
+            // the gap so the caller can always correlate the response with a log.
+            response
+                .headers_mut()
+                .entry(crate::X_REQUEST_ID)
+                .or_insert_with(|| this.request_id.to_header_value());
         }
         Poll::Ready(outcome)
     }

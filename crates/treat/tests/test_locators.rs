@@ -1,8 +1,8 @@
 //! Coverage for error locators (JSON:API `source`) and RFC 9457 `type`/`instance`,
 //! plus the OpenAPI schema of the envelope (feature `openapi`).
 
-use treat::{ErrorSource, error};
 use serde_json::json;
+use treat::{ErrorSource, error};
 
 #[test]
 fn builders_set_locator_fields() {

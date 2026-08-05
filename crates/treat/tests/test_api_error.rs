@@ -1,9 +1,9 @@
 //! Unit coverage for the `ApiError` type: constructors, builders, accessors,
 //! message formatting, verbose behaviour, `Display`/`Debug` and `std::error::Error`.
 
-use treat::{ApiError, error, error_and_message, wrap_error};
 use serde_json::json;
 use std::error::Error;
+use treat::{ApiError, error, error_and_message, wrap_error};
 
 #[test]
 fn constructors_set_expected_fields() {

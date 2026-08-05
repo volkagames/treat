@@ -2,9 +2,9 @@
 //! `success_with_meta` constructor that attaches them.
 #![cfg(feature = "meta-slots")]
 
+use serde_json::json;
 use treat::meta_slots::{Pagination, RateLimit};
 use treat::success_with_meta;
-use serde_json::json;
 
 #[test]
 fn pagination_computes_total_pages() {

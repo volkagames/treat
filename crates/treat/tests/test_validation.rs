@@ -3,8 +3,8 @@
 //! `Validated<T>` typestate.
 #![cfg(all(feature = "serde-path", feature = "validator"))]
 
-use treat::{ValidateApi, Validated, deserialize_body, validation_error_messages};
 use serde::Deserialize;
+use treat::{ValidateApi, Validated, deserialize_body, validation_error_messages};
 use validator::Validate;
 
 #[derive(Debug, Deserialize)]

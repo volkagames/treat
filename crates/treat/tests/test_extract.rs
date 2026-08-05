@@ -2,8 +2,8 @@
 //! actix report parse and validation failures in the `treat` envelope.
 #![cfg(feature = "serde-path")]
 
-use treat::ApiResponse;
 use serde::Deserialize;
+use treat::ApiResponse;
 
 #[derive(Debug, Deserialize)]
 struct Body {

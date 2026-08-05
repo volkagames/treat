@@ -110,9 +110,11 @@ a given error serializes to **byte-identical JSON** regardless of framework
 The `actix-middleware` feature ships a tracing-aware logger — a trimmed-down,
 `treat`-flavoured take on `tracing-actix-web`:
 
-- [`Logger`] — wraps each request in a root span, generates a request-id, and
-  logs the outcome (calls your error handler on failure).
+- [`Logger`] — wraps each request in a root span, resolves the request-id, writes
+  it back on the response in canonical form, and logs the outcome (calls your
+  error handler on failure).
 - [`RequestId`] — a per-request UUID; usable as a `FromRequest` extractor.
+- `X_REQUEST_ID` — the `x-request-id` header name the logger reads and writes.
 - [`RootSpan`] — the request's root `tracing::Span`; usable as an extractor and
   as a re-parenting point.
 - `root_span!` — the macro that builds the default OTel-shaped span (customize via
@@ -152,11 +154,13 @@ stitch together across services.
 The `tower-middleware` feature ships the same request-id + root span for
 `tower`-based frameworks, exposed under `treat::tower`:
 
-- `TraceLayer` — a [`tower::Layer`] that, per request, generates a `RequestId`
+- `TraceLayer` — a [`tower::Layer`] that, per request, resolves a `RequestId`
   (stored in the request extensions), opens the `"HTTP request"` root span with
-  the same fields as the actix logger, and records the response status.
+  the same fields as the actix logger, records the response status, and writes the
+  id back on the response in canonical form.
 - `RequestId` — a per-request UUID; read it in a handler with axum's
   `Extension<RequestId>` (the layer inserts it into the request extensions).
+- `X_REQUEST_ID` — the `x-request-id` header name the layer reads and writes.
 
 ```rust,ignore
 use treat::tower::{RequestId, TraceLayer};
@@ -178,6 +182,31 @@ poem can consume the same layer through its tower-compat shim:
 use poem::middleware::TowerLayerCompatExt;
 let app = route.with(treat::tower::TraceLayer::new().compat());
 ```
+
+## Request-id propagation
+
+Both middlewares resolve the id the same way, so a request keeps one identifier
+across services:
+
+1. If the incoming `x-request-id` parses as a UUID, it is adopted (surrounding
+   whitespace is trimmed, since proxies commonly add it) and normalized to the
+   canonical lowercase hyphenated form. Every form `uuid::Uuid::parse_str`
+   accepts is adopted — braced (`{67e55044-…}`), URN (`urn:uuid:67e55044-…`),
+   unhyphenated (`67e5504410b1426f9247bb680e5fe0c8`), and uppercase — but the id
+   is re-emitted canonically, not verbatim, so one format holds across services.
+2. Otherwise a fresh v4 UUID is generated.
+3. The resolved id goes into the request extensions and the span's `request_id`
+   field, and is written in canonical form to `x-request-id` on the response —
+   unless the handler already set that header, in which case the handler wins.
+
+Requiring a UUID is deliberate. `request_id` is recorded on every log line for the
+request, so accepting arbitrary header text would let a caller inject unbounded or
+misleading content into your logs. A service that must echo a caller-chosen token
+of its own format should carry it in a separate header.
+
+Because `RequestId` is always a UUID it stays `Copy` and still derefs to
+[`uuid::Uuid`]; build one from a `Uuid` with `RequestId::from`, and go the other
+way with `into_uuid()`.
 
 ## Request extractors
 

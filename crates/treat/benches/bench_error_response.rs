@@ -6,9 +6,9 @@
 //! the same code path.
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use treat::{ApiError, ApiErrorHandler, error};
 use std::hint::black_box;
 use std::sync::Arc;
+use treat::{ApiError, ApiErrorHandler, error};
 
 /// A realistic error: message, locator, explicit status, and a cause chain.
 fn realistic() -> ApiError {

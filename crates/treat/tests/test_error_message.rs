@@ -1,8 +1,8 @@
 //! Coverage for `ErrorMessage`: serde, conversions to `Value`/`Report`,
 //! `IntoIterator`, `Display` and `into_response`.
 
-use treat::{ApiResponse, ErrorMessage};
 use serde_json::json;
+use treat::{ApiResponse, ErrorMessage};
 
 fn full() -> ErrorMessage {
     ErrorMessage {

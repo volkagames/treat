@@ -11,12 +11,12 @@ publish = false
 # so any bare `ApiResponse`/`erris` in generated code fails to compile here.
 
 [dependencies]
+thiserror = "2"
 treat = { path = "../treat", features = ["derive"] }
 
 # A core-only dependant: `treat-core` + `treat-derive` with no facade in scope.
 treat-core = { path = "../treat-core" }
 treat-derive = { path = "../treat-derive" }
-thiserror = "2"
 
 [lints]
 workspace = true

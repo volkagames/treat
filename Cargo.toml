@@ -9,7 +9,7 @@ edition = "2024"
 keywords = ["api", "error", "http", "json", "rpc"]
 license = "MIT"
 repository = "https://github.com/volkagames/treat"
-rust-version = "1.85"
+rust-version = "1.88"
 version = "0.19.6"
 
 [workspace.dependencies]

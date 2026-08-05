@@ -44,7 +44,7 @@ treat-derive = { workspace = true, optional = true }
 treat-tower = { workspace = true, optional = true }
 
 [dev-dependencies]
-actix-web = "4.11"
+actix-web = "4.14"
 axum = "0.8"
 criterion = "0.8"
 erris = { workspace = true }
@@ -71,7 +71,7 @@ tracing-subscriber = { version = "0.3.23", features = [
 ] }
 triomphe = "0.1.16"
 utoipa = { version = "5.5.0", features = ["axum_extras"] }
-validator = { version = "0.20", features = ["derive"] }
+validator = { version = "0.21", features = ["derive"] }
 
 [[bench]]
 name = "bench_box_vs_arc"

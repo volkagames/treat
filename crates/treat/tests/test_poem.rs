@@ -3,10 +3,10 @@
 //! `into_api_response` builder (so poem agrees with actix and axum).
 #![cfg(feature = "poem")]
 
-use treat::{ApiResponse, DEFAULT_ERROR_STATUS, error, success};
 use poem::IntoResponse;
 use poem::error::ResponseError;
 use poem::http::StatusCode;
+use treat::{ApiResponse, DEFAULT_ERROR_STATUS, error, success};
 
 #[tokio::test]
 async fn api_error_as_response_is_a_treat_envelope() {

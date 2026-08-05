@@ -9,8 +9,8 @@ use treat::{error, success};
 #[cfg(feature = "serde-path")]
 #[test]
 fn a_rejected_body_reports_422_not_200() {
-    use treat::{REJECTION_STATUS, deserialize_body};
     use serde::Deserialize;
+    use treat::{REJECTION_STATUS, deserialize_body};
 
     #[derive(Debug, Deserialize)]
     struct Body {
@@ -30,8 +30,8 @@ fn a_rejected_body_reports_422_not_200() {
 #[test]
 fn axum_body_rejection_renders_422() {
     use axum::response::IntoResponse;
-    use treat::deserialize_body;
     use serde::Deserialize;
+    use treat::deserialize_body;
 
     #[derive(Debug, Deserialize)]
     struct Body {

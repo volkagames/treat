@@ -2,10 +2,10 @@
 //! `FromErrorMessage`.
 #![cfg(feature = "derive")]
 
-use treat::prelude::*;
-use treat::{ApiError, ErrorMessage};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use treat::prelude::*;
+use treat::{ApiError, ErrorMessage};
 
 // ---------------------------------------------------------------------------
 // #[derive(ApiError)] — maps a thiserror enum onto ApiError<&'static str>

@@ -15,12 +15,12 @@ version.workspace = true
 telemetry = ["dep:opentelemetry", "dep:tracing-opentelemetry"]
 
 [dependencies]
-actix-web = "4.11"
-treat-core = { workspace = true, features = ["actix"] }
+actix-web = "4.14"
 opentelemetry = { version = "0.32", optional = true }
 pin-project = "1"
 tracing = { version = "0.1", features = ["log"] }
 tracing-opentelemetry = { version = "0.33", optional = true }
+treat-core = { workspace = true, features = ["actix"] }
 uuid = { version = "1", features = ["v4"] }
 
 [lints]

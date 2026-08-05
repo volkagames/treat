@@ -2,7 +2,8 @@
 //! (axum, and poem via its tower-compat layer) the same per-request
 //! observability as the actix middleware in `treat-actix`:
 //!
-//! - a per-request [`RequestId`] stored in the request extensions,
+//! - a per-request [`RequestId`] stored in the request extensions, adopted from an
+//!   incoming [`X_REQUEST_ID`] when it is a UUID and echoed back on the response,
 //! - a root span (`"HTTP request"`) with the same OpenTelemetry-flavoured fields,
 //! - OpenTelemetry parent-context propagation from request headers (feature
 //!   `telemetry`).
