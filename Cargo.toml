@@ -10,14 +10,14 @@ keywords = ["api", "error", "http", "json", "rpc"]
 license = "MIT"
 repository = "https://github.com/volkagames/treat"
 rust-version = "1.88"
-version = "0.19.6"
+version = "0.19.7"
 
 [workspace.dependencies]
 erris = { version = "2.1" }
-treat-actix = { path = "crates/treat-actix", version = "=0.19.6" }
-treat-core = { path = "crates/treat-core", version = "=0.19.6" }
-treat-derive = { path = "crates/treat-derive", version = "=0.19.6" }
-treat-tower = { path = "crates/treat-tower", version = "=0.19.6" }
+treat-actix = { path = "crates/treat-actix", version = "=0.19.7" }
+treat-core = { path = "crates/treat-core", version = "=0.19.7" }
+treat-derive = { path = "crates/treat-derive", version = "=0.19.7" }
+treat-tower = { path = "crates/treat-tower", version = "=0.19.7" }
 
 [workspace.lints.clippy]
 enum_glob_use = "deny"
