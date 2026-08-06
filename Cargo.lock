@@ -2210,7 +2210,7 @@ dependencies = [
 
 [[package]]
 name = "treat"
-version = "0.19.7"
+version = "0.19.8"
 dependencies = [
  "actix-web",
  "axum",
@@ -2235,7 +2235,7 @@ dependencies = [
 
 [[package]]
 name = "treat-actix"
-version = "0.19.7"
+version = "0.19.8"
 dependencies = [
  "actix-web",
  "opentelemetry",
@@ -2248,7 +2248,7 @@ dependencies = [
 
 [[package]]
 name = "treat-core"
-version = "0.19.7"
+version = "0.19.8"
 dependencies = [
  "actix-web",
  "axum",
@@ -2264,7 +2264,7 @@ dependencies = [
 
 [[package]]
 name = "treat-derive"
-version = "0.19.7"
+version = "0.19.8"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -2274,7 +2274,7 @@ dependencies = [
 
 [[package]]
 name = "treat-hygiene"
-version = "0.19.7"
+version = "0.19.8"
 dependencies = [
  "thiserror",
  "treat",
@@ -2284,7 +2284,7 @@ dependencies = [
 
 [[package]]
 name = "treat-hygiene-renamed"
-version = "0.19.7"
+version = "0.19.8"
 dependencies = [
  "thiserror",
  "treat",
@@ -2292,7 +2292,7 @@ dependencies = [
 
 [[package]]
 name = "treat-tower"
-version = "0.19.7"
+version = "0.19.8"
 dependencies = [
  "axum",
  "http 1.5.0",
