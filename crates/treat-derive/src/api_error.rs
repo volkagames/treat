@@ -21,20 +21,21 @@ pub fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
         let Some(code) = crate::fetch_code_from_attrs(&variant.attrs)? else {
             continue;
         };
+        let status = crate::fetch_status_from_attrs(&variant.attrs)?.map(|status| quote! { .with_status(#status) });
         inner_impl.push(match variant.fields {
             Fields::Unit => {
                 quote! {
-                    #enum_name::#ident => #treat::error(#code).with_message(message),
+                    #enum_name::#ident => #treat::error(#code).with_message(message) #status,
                 }
             }
             Fields::Unnamed(_) => {
                 quote! {
-                    #enum_name::#ident(_) => #treat::error(#code).with_message(message),
+                    #enum_name::#ident(_) => #treat::error(#code).with_message(message) #status,
                 }
             }
             Fields::Named(_) => {
                 quote! {
-                    #enum_name::#ident { .. } => #treat::error(#code).with_message(message),
+                    #enum_name::#ident { .. } => #treat::error(#code).with_message(message) #status,
                 }
             }
         });

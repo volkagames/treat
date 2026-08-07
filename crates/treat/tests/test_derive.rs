@@ -15,11 +15,18 @@ use treat::{ApiError, ErrorMessage};
 enum ChatError {
     #[error("Access denied")]
     #[code("access_denied")]
+    #[status(403)]
     AccessDenied,
+
+    // No `#[status]`: keeps the crate default.
+    #[error("unprocessable")]
+    #[code("unprocessable")]
+    Unprocessable,
 
     #[catch_all]
     #[error("internal error")]
     #[code("bad_request")]
+    #[status(500)]
     Internal(#[source] erris::Report),
 }
 
@@ -40,6 +47,21 @@ fn api_error_derive_catch_all_from_report() {
     assert_eq!(api.message().map(|m| m.as_ref()), Some("internal error"));
 }
 
+#[test]
+fn api_error_derive_applies_status_attribute() {
+    let e: ApiError = ChatError::AccessDenied.into();
+    assert_eq!(e.status(), 403);
+
+    let e: ApiError = ChatError::Internal(erris::report!("kaboom")).into();
+    assert_eq!(e.status(), 500);
+}
+
+#[test]
+fn api_error_derive_without_status_keeps_the_default() {
+    let e: ApiError = ChatError::Unprocessable.into();
+    assert_eq!(e.status(), treat::DEFAULT_ERROR_STATUS);
+}
+
 // ---------------------------------------------------------------------------
 // #[derive(ApiErrorCode)] — a typed error-code enum
 // ---------------------------------------------------------------------------
@@ -54,6 +76,7 @@ enum PortalErrorCode {
     #[message("other_message")]
     account_info_invalid,
     #[message("account with id {account_id} not found")]
+    #[status(404)]
     account_not_found {
         account_id: u64,
     },
@@ -86,6 +109,29 @@ fn api_error_code_interpolates_named_and_tuple_fields() {
 
     let e: PortalError = PortalErrorCode::account_abc(1, "x".to_string(), 5).into();
     assert_eq!(e.to_error_message().message.as_deref(), Some("account foo 1 5"));
+}
+
+#[test]
+fn api_error_code_applies_status_attribute() {
+    let e: PortalError = PortalErrorCode::account_not_found { account_id: 42 }.into();
+    assert_eq!(e.status(), 404);
+}
+
+#[test]
+fn api_error_code_without_status_keeps_the_default() {
+    let e: PortalError = PortalErrorCode::account_already_exist.into();
+    assert_eq!(e.status(), treat::DEFAULT_ERROR_STATUS);
+}
+
+/// The generated `ApiErrorStatus` impl backs `with_code_status()` too, so a code
+/// built by hand can pick the mapping up.
+#[test]
+fn api_error_code_status_attribute_drives_with_code_status() {
+    let e = treat::error(PortalErrorCode::account_not_found { account_id: 1 }).with_code_status();
+    assert_eq!(e.status(), 404);
+
+    let e = treat::error(PortalErrorCode::account_already_exist).with_code_status();
+    assert_eq!(e.status(), treat::DEFAULT_ERROR_STATUS);
 }
 
 #[test]

@@ -41,6 +41,39 @@ pub trait WrapApiError<T, C: ApiErrorCode> {
     where
         C: Into<ApiError<C>>;
 
+    /// Wrap the error with `C`'s default code, applying that code's declared
+    /// message and status.
+    ///
+    /// The no-argument form of [`wrap_api_code`](Self::wrap_api_code), for the
+    /// common case where a handler maps every unexpected failure onto the same
+    /// code and restating it at each call site adds nothing. Goes through the
+    /// same `From<C> for ApiError<C>`, so `#[message(...)]` **and**
+    /// `#[status(...)]` declared on the variant are applied. The original error
+    /// is kept as the source.
+    ///
+    /// ```
+    /// use treat_core::prelude::*;
+    /// # use treat_core::{ApiError, error};
+    /// # #[derive(Clone, Debug, Default)]
+    /// # enum Code { #[default] Internal }
+    /// # impl std::fmt::Display for Code {
+    /// #     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "internal") }
+    /// # }
+    /// # impl From<Code> for ApiError<Code> {
+    /// #     fn from(c: Code) -> Self { error(c).with_message("the request could not be completed").with_status(500) }
+    /// # }
+    /// let failed: Result<(), std::io::Error> = Err(std::io::Error::other("disk"));
+    /// let err: ApiError<Code> = failed.wrap_api_error_default().expect_err("wrapped");
+    ///
+    /// assert_eq!(err.message().map(|m| m.as_ref()), Some("the request could not be completed"));
+    /// assert_eq!(err.status(), 500);
+    /// assert!(err.source().is_some(), "the cause is kept for the logs");
+    /// ```
+    #[track_caller]
+    fn wrap_api_error_default(self) -> Result<T, ApiError<C>>
+    where
+        C: Default + Into<ApiError<C>>;
+
     #[track_caller]
     fn wrap_api_error_and_message(
         self,
@@ -80,6 +113,14 @@ where
             Ok(v) => Ok(v),
             Err(err) => Err(code.into().with_source(err.into_report())),
         }
+    }
+
+    #[track_caller]
+    fn wrap_api_error_default(self) -> Result<T, ApiError<C>>
+    where
+        C: Default + Into<ApiError<C>>,
+    {
+        self.wrap_api_code(C::default())
     }
 
     #[track_caller]
@@ -131,6 +172,16 @@ pub trait WithErrorCode: Into<erris::Report> {
     #[track_caller]
     fn with_api_code<C: ApiErrorCode + Into<ApiError<C>>>(self, code: C) -> ApiError<C> {
         code.into().with_source(self.into())
+    }
+
+    /// Attach `C`'s default code, applying that code's declared message and
+    /// status.
+    ///
+    /// The no-argument counterpart of [`with_api_code`](Self::with_api_code); see
+    /// [`WrapApiError::wrap_api_error_default`] for the rationale.
+    #[track_caller]
+    fn with_api_default_code<C: ApiErrorCode + Default + Into<ApiError<C>>>(self) -> ApiError<C> {
+        self.with_api_code(C::default())
     }
 
     #[track_caller]

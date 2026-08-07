@@ -3,10 +3,13 @@
 use treat::{ApiError, ApiErrorHandler, WithErrorCode, WrapApiError, error};
 
 /// Exercises the `From<C> for ApiError<C>` route the `*_api_code` methods take.
-#[derive(Clone, Debug, treat::ApiErrorCode)]
+/// `Default` picks the variant the `*_default` methods substitute.
+#[derive(Clone, Debug, Default, treat::ApiErrorCode)]
 enum Code {
+    #[default]
     #[code("internal")]
     #[message("the request could not be completed")]
+    #[status(500)]
     Internal,
 
     /// No `#[message]` — the declared-message route has nothing to apply.
@@ -171,6 +174,64 @@ fn wrap_api_code_chains_onto_a_source_the_from_impl_set() {
         chain.contains("preexisting"),
         "cause set by the From impl was dropped:\n{chain}"
     );
+}
+
+#[test]
+fn wrap_api_error_default_substitutes_the_default_code() {
+    let err: erris::Result<i32> = Err(erris::report!("boom"));
+    let e: ApiError<Code> = err.wrap_api_error_default().expect_err("err");
+
+    assert_eq!(e.code().to_string(), "internal");
+    assert_eq!(
+        e.message().map(|m| m.as_ref()),
+        Some("the request could not be completed")
+    );
+    assert_eq!(e.status(), 500, "the declared #[status] must be applied");
+    assert!(e.source().is_some(), "the cause must survive for the logs");
+}
+
+#[test]
+fn wrap_api_error_default_passes_the_value_through_on_ok() {
+    let ok: erris::Result<i32> = Ok(1);
+    let passed: Result<i32, ApiError<Code>> = ok.wrap_api_error_default();
+    assert_eq!(passed.expect("ok"), 1);
+}
+
+/// Same reach as the rest of the family: any `IntoReport` error, not just a report.
+#[test]
+fn wrap_api_error_default_accepts_a_foreign_error() {
+    let failed: Result<(), std::io::Error> = Err(std::io::Error::other("disk"));
+    let e: ApiError<Code> = failed.wrap_api_error_default().expect_err("err");
+
+    assert_eq!(e.source().expect("source").to_string(), "disk");
+}
+
+#[test]
+fn wrap_api_error_default_reports_the_caller_location() {
+    let err: erris::Result<i32> = Err(erris::report!("boom"));
+    let expected_line = line!() + 1;
+    let e: ApiError<Code> = err.wrap_api_error_default().expect_err("err");
+
+    let location = ApiErrorHandler::location(&e);
+    assert_eq!(location.line(), expected_line);
+    assert!(
+        location.file().ends_with("test_wrap_error_code.rs"),
+        "location pointed at {}, not the call site",
+        location.file(),
+    );
+}
+
+#[test]
+fn with_api_default_code_substitutes_the_default_code() {
+    let e: ApiError<Code> = erris::report!("boom").with_api_default_code();
+
+    assert_eq!(e.code().to_string(), "internal");
+    assert_eq!(
+        e.message().map(|m| m.as_ref()),
+        Some("the request could not be completed")
+    );
+    assert_eq!(e.status(), 500);
+    assert!(e.source().is_some());
 }
 
 #[test]

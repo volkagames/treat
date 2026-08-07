@@ -76,6 +76,10 @@ pub fn from_error_message(input: TokenStream) -> TokenStream {
 /// an `erris::Report` and also gets a `From<erris::Report>` impl, so `?` on a
 /// report produces your enum. Generates `From<YourEnum> for ApiError`.
 ///
+/// Add `#[status(404)]` to carry a transport HTTP status alongside the code; the
+/// generated conversion applies it, so the adapters return it without the call
+/// site restating the status. Variants without it keep the crate default.
+///
 /// ```ignore
 /// use treat::prelude::*;
 /// use thiserror::Error;
@@ -84,15 +88,17 @@ pub fn from_error_message(input: TokenStream) -> TokenStream {
 /// enum ServiceError {
 ///     #[error("access denied")]
 ///     #[code("forbidden")]
+///     #[status(403)]
 ///     Forbidden,
 ///
 ///     #[catch_all]
 ///     #[error("internal error")]
 ///     #[code("internal")]
+///     #[status(500)]
 ///     Internal(#[source] treat::erris::Report),
 /// }
 /// ```
-#[proc_macro_derive(ApiError, attributes(code, catch_all))]
+#[proc_macro_derive(ApiError, attributes(code, catch_all, status))]
 pub fn derive_api_error(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input);
     api_error::derive(&input)
@@ -112,20 +118,29 @@ pub fn derive_api_error(input: TokenStream) -> TokenStream {
 /// `snake_case` convention used elsewhere here, and it silently changes if the
 /// Rust variant is renamed. The default is kept for backwards compatibility.
 ///
+/// `#[status(404)]` maps a variant onto a transport HTTP status. The generated
+/// `From` applies it, and an [`ApiErrorStatus`] impl is emitted as soon as any
+/// variant carries one, so `with_code_status()` works too; variants without the
+/// attribute report the crate default.
+///
 /// ```ignore
 /// use treat::prelude::*;
 ///
 /// #[derive(Clone, Debug, PartialEq, ApiErrorCode)]
 /// enum OrderError {
 ///     #[message("order {id} not found")]
+///     #[status(404)]
 ///     NotFound { id: u64 },
 ///     #[code("order.already_paid")]
 ///     AlreadyPaid,
 /// }
 ///
 /// let err: ApiError<OrderError> = OrderError::NotFound { id: 7 }.into();
+/// assert_eq!(err.status(), 404);
 /// ```
-#[proc_macro_derive(ApiErrorCode, attributes(code, message))]
+///
+/// [`ApiErrorStatus`]: ../treat/trait.ApiErrorStatus.html
+#[proc_macro_derive(ApiErrorCode, attributes(code, message, status))]
 pub fn derive_api_error_code(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input);
     api_error_code::derive(&input)
@@ -157,4 +172,36 @@ fn fetch_code_from_attrs(attrs: &[syn::Attribute]) -> syn::Result<Option<String>
 
 fn fetch_message_from_attrs(attrs: &[syn::Attribute]) -> syn::Result<Option<String>> {
     fetch_str_attr(attrs, "message")
+}
+
+/// Mirrors `treat_core::VALID_STATUS_RANGE`; duplicated because a proc-macro
+/// crate cannot depend on the runtime crate it generates code for.
+const VALID_STATUS_RANGE: std::ops::RangeInclusive<u16> = 100..=599;
+
+/// Read `#[status(404)]`, rejecting out-of-range values at compile time.
+///
+/// Returns `Ok(None)` when absent. Checking here rather than leaning on the
+/// runtime `debug_assert` in `with_status` turns a typo into a build error.
+fn fetch_status_from_attrs(attrs: &[syn::Attribute]) -> syn::Result<Option<u16>> {
+    let Some(attr) = attrs.iter().find(|attr| attr.path().is_ident("status")) else {
+        return Ok(None);
+    };
+    let lit = attr.parse_args::<syn::LitInt>().map_err(|err| {
+        syn::Error::new(
+            err.span(),
+            "attribute `status` expects an integer literal, e.g. #[status(404)]",
+        )
+    })?;
+    let status = lit.base10_parse::<u16>()?;
+    if !VALID_STATUS_RANGE.contains(&status) {
+        return Err(syn::Error::new_spanned(
+            &lit,
+            format!(
+                "`status` must be a valid HTTP status code ({}..={})",
+                VALID_STATUS_RANGE.start(),
+                VALID_STATUS_RANGE.end(),
+            ),
+        ));
+    }
+    Ok(Some(status))
 }
