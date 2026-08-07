@@ -52,7 +52,7 @@ pub mod prelude {
     pub use super::ok_or_error::*;
     pub use super::response::*;
     pub use super::wrap_error_code::*;
-    pub use super::{ApiError, ApiErrorCode, ApiErrorTrack, ApiResponse, ErrorMessage};
+    pub use super::{ApiError, ApiErrorCode, ApiErrorTrack, ApiResponse, ApiResponseTrack, ErrorMessage};
 }
 
 cfg_block::cfg_block! {
