@@ -1,0 +1,35 @@
+[package]
+authors.workspace = true
+categories.workspace = true
+description = "axum middleware for treat: logs the API error carried by the response"
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+name = "treat-axum-logging"
+repository.workspace = true
+resolver = "3"
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+http = "1"
+http-body = "1"
+tower = { version = "0.5", features = ["util"] }
+tracing = { version = "0.1", features = ["log"] }
+# The error is read back from the response extensions, where treat's axum
+# adapter stashes it; the `axum` feature is what puts it there.
+treat-core = { workspace = true, features = ["axum"] }
+# For the `RequestId` an upstream `TraceLayer` puts in the request extensions.
+# This crate only reads it — it never generates one of its own.
+treat-tower = { workspace = true }
+
+[dev-dependencies]
+axum = "0.8"
+erris = { workspace = true }
+tokio = { version = "1", features = ["macros", "rt"] }
+tower = { version = "0.5", features = ["util"] }
+tracing-subscriber = "0.3"
+uuid = { version = "1", features = ["v4"] }
+
+[lints]
+workspace = true
