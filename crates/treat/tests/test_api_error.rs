@@ -307,6 +307,42 @@ fn typed_error_code() {
     assert_eq!(e.to_error_message().code, "E042");
 }
 
+// `map_code` re-reports a failure under another code type, which is how a
+// caller re-raises what a shared helper reported through a narrower one.
+#[test]
+fn map_code_rewrites_the_code_and_carries_everything_else() {
+    use treat::ApiErrorHandler;
+
+    let inner = error("db_error")
+        .with_message("connection lost")
+        .with_meta(json!({ "table": "clans" }))
+        .with_pointer("/data/attributes/name")
+        .with_type("https://errors.example/db")
+        .with_instance("req-7")
+        .with_status(503)
+        .with_verbose()
+        .with_error(erris::report!("timeout"));
+    let raised_at = inner.location();
+
+    let outer = inner.map_code(|code| format!("lookup:{code}"));
+
+    assert_eq!(*outer.code(), "lookup:db_error");
+    assert_eq!(outer.message().map(|m| m.as_ref()), Some("connection lost"));
+    assert_eq!(outer.meta(), Some(&json!({ "table": "clans" })));
+    assert_eq!(
+        outer.error_source().and_then(|s| s.pointer.as_deref()),
+        Some("/data/attributes/name")
+    );
+    assert_eq!(outer.type_uri(), Some("https://errors.example/db"));
+    assert_eq!(outer.instance(), Some("req-7"));
+    assert_eq!(outer.status(), 503);
+    assert!(outer.is_verbose());
+    assert!(outer.source().is_some(), "the source chain survives");
+    // The location is kept, not recaptured: the error still points at where it
+    // was raised rather than where it was remapped.
+    assert_eq!(outer.location(), raised_at);
+}
+
 // G1: transport HTTP status. Default is `DEFAULT_ERROR_STATUS` (200, or 500 under
 // `error-status-500`); `with_status` overrides; the opt-in `ApiErrorStatus` trait
 // seeds it from the code via `with_code_status`.

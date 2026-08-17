@@ -147,6 +147,40 @@ let chain = err.collect_messages();
 assert!(chain.iter().any(|m| m.code == "insufficient_funds"));
 ```
 
+## Re-reporting under another code
+
+`map_code` rewrites the code and carries everything else over — message, meta,
+locator, `type`/`instance`, status, source chain and verbose flag. It is how a
+failure crosses a layer boundary where the code type changes: a shared check
+reports through its own narrow code type, and each caller re-raises it as its
+own.
+
+```rust
+use treat::prelude::*;
+
+#[derive(Debug, Clone)]
+enum StorageCode { Unavailable }
+# impl std::fmt::Display for StorageCode {
+#     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "unavailable") }
+# }
+
+fn load() -> Result<String, ApiError<StorageCode>> {
+    Err(treat::error(StorageCode::Unavailable).with_message("connection lost"))
+}
+
+fn handler() -> Result<String, ApiError> {
+    // The message and the source chain survive; only the code is restated.
+    load().map_err(|err| err.map_code(|_| "checkout_failed"))
+}
+
+let err = handler().expect_err("storage is down");
+assert_eq!(*err.code(), "checkout_failed");
+assert_eq!(err.message().map(|m| m.as_ref()), Some("connection lost"));
+```
+
+The raise location is kept rather than recaptured, so `Debug` and verbose output
+still point at where the failure happened and not at where it was remapped.
+
 ## Verbose mode: what reaches the client
 
 By default a response exposes only the **top-level** error — internal causes stay

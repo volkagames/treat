@@ -380,6 +380,54 @@ impl<C: ApiErrorCode> ApiError<C> {
     pub fn track(self) -> Self {
         self.with_source(erris::Report::new_transparent())
     }
+
+    /// Rewrite the code, carrying everything else over untouched.
+    ///
+    /// A failure raised deep in a call chain often has to be re-reported under
+    /// the code type its caller answers with — a shared check reporting through
+    /// a narrow code set that each caller widens into its own, or a domain code
+    /// translated at a layer boundary. Only the code changes; `message`, `meta`,
+    /// the locator, `type`/`instance`, the status, the source chain and the
+    /// verbose flag travel with it.
+    ///
+    /// This cannot be written outside the crate: the fields are private, and
+    /// rebuilding the error from the accessors would lose the source chain
+    /// (which is handed out by reference) along with the raise location.
+    ///
+    /// `location` is deliberately kept rather than recaptured, so the error
+    /// still points at where it was raised and not at where it was remapped.
+    ///
+    /// ```
+    /// use treat_core::error;
+    ///
+    /// let inner = error("db_error")
+    ///     .with_message("connection lost")
+    ///     .with_error(erris::report!("timeout"));
+    /// let outer = inner.map_code(|code| format!("lookup:{code}"));
+    ///
+    /// assert_eq!(*outer.code(), "lookup:db_error");
+    /// assert_eq!(outer.message().map(|m| m.as_ref()), Some("connection lost"));
+    /// assert!(outer.source().is_some(), "the source chain survives");
+    /// ```
+    pub fn map_code<D: ApiErrorCode>(self, map: impl FnOnce(C) -> D) -> ApiError<D> {
+        let inner = *self.boxed;
+        ApiError {
+            boxed: Box::new(ApiErrorInner {
+                code: map(inner.code),
+                message: inner.message,
+                meta: inner.meta,
+                error_source: inner.error_source,
+                type_uri: inner.type_uri,
+                instance: inner.instance,
+                status: inner.status,
+                source: inner.source,
+                verbose: inner.verbose,
+                location: inner.location,
+                #[cfg(feature = "spantrace")]
+                spantrace: inner.spantrace,
+            }),
+        }
+    }
 }
 
 impl<C: ApiErrorCode + ApiErrorStatus> ApiError<C> {
