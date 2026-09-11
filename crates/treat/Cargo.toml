@@ -44,7 +44,7 @@ treat-derive = { workspace = true, optional = true }
 treat-tower = { workspace = true, optional = true }
 
 [dev-dependencies]
-actix-web = "4.15"
+actix-web = { version = "4.15", default-features = false, features = ["macros", "compress-brotli", "compress-gzip", "compress-zstd", "cookies", "unicode", "compat", "ws"] }
 axum = "0.8"
 criterion = "0.8"
 erris = { workspace = true }
