@@ -34,7 +34,7 @@ validator-extract = ["validator", "serde-path"]
 verbose-error = []
 
 [dependencies]
-actix-web = { version = "4.14", optional = true }
+actix-web = { version = "4.15", optional = true }
 axum = { version = "0.8", optional = true }
 cfg_block = "0.2"
 erris = { workspace = true }

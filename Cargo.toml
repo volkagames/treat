@@ -13,7 +13,7 @@ rust-version = "1.88"
 version = "0.21.0"
 
 [workspace.dependencies]
-erris = { version = "2.1" }
+erris = { version = "2.2" }
 treat-actix = { path = "crates/treat-actix", version = "=0.21.0" }
 treat-axum-logging = { path = "crates/treat-axum-logging", version = "=0.21.0" }
 treat-core = { path = "crates/treat-core", version = "=0.21.0" }
