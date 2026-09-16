@@ -6,7 +6,7 @@
 | ------------------------- | ------------------------------- | ---------------------------------------- |
 | `code`                    | `C` (`&'static str` by default) | machine-readable, what clients branch on |
 | `message`                 | `Option<Cow<str>>`              | human-readable detail                    |
-| `meta`                    | `Option<serde_json::Value>`     | arbitrary structured context             |
+| `meta`                    | `Option<Map<String, Value>>`    | structured context, always a JSON object |
 | `source`                  | `Option<erris::Report>`         | the underlying cause chain               |
 | `location`                | `&'static Location`             | where it was raised (`#[track_caller]`)  |
 | `spantrace` / `backtrace` | optional                        | captured under the matching feature      |
@@ -217,6 +217,78 @@ fn outer() -> Result<(), ApiError> {
     Ok(())
 }
 ```
+
+## Span traces
+
+A span trace records the `tracing` spans that were open when an error was
+created — the request, the handler, whatever `#[instrument]` added — together
+with their fields. It is what turns `connection lost` in a log into *which*
+request and *which* record.
+
+It is off by default and takes **two** steps to turn on. Missing either one
+fails silently: nothing errors, the trace is just not there.
+
+### 1. Enable the `spantrace` feature
+
+```toml
+[dependencies]
+treat = { version = "0.23", features = ["axum", "spantrace"] }
+tracing-error = "0.2"
+tracing-subscriber = "0.3"
+```
+
+With it, every `erris::Report` captures a trace when it is created
+(`erris::report!`, or a foreign error wrapped into one), and every `ApiError`
+captures its own in `error()`, `error_and_message()` and `wrap_error()`.
+
+### 2. Install `ErrorLayer` in the subscriber
+
+Capturing reads span data that only `tracing_error::ErrorLayer` records. Add it
+next to whatever layers the service already builds:
+
+```rust,ignore
+use tracing_subscriber::prelude::*;
+
+tracing_subscriber::registry()
+    .with(tracing_subscriber::fmt::layer())
+    .with(tracing_error::ErrorLayer::default())
+    .init();
+```
+
+### What it looks like
+
+`{:?}` on the report — which is what the error loggers write as `cause` — ends
+with the trace, innermost span first:
+
+```text
+connection lost
+
+Location:
+   0: src/clans.rs:5:45
+
+SpanTrace:
+   0: my_service::load_clan
+           with clan_id=7
+             at src/clans.rs:4
+   1: my_service::http_request
+           with path="/clans/get"
+             at src/main.rs:14
+```
+
+`ApiError`'s own trace is the `spantrace` field of `{:#?}`.
+
+### When the trace is not there
+
+| Symptom                                     | Cause                                                                                                                             |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| no `SpanTrace:` section at all              | the `spantrace` feature is off                                                                                                    |
+| `SpanTrace:` is printed but empty           | `ErrorLayer` is not in the subscriber                                                                                             |
+| a span you expected is missing              | the subscriber's level filter disabled it; a span below the filter is never recorded                                              |
+| traces appear although `spantrace` is off   | another crate in the build depends on `erris` with its default features, which turns capture on for reports (not for `ApiError`) |
+
+Before 0.23 `treat` pulled `erris` with its default features, so reports
+captured a trace whatever `spantrace` said. A service that relied on that now
+needs `features = ["spantrace"]`.
 
 ## HTTP status
 

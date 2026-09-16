@@ -8,7 +8,7 @@ fn full() -> ErrorMessage {
     ErrorMessage {
         code: "c".to_string(),
         message: Some("m".to_string()),
-        meta: Some(json!({ "k": 1 })),
+        meta: json!({ "k": 1 }).as_object().cloned(),
         ..Default::default()
     }
 }

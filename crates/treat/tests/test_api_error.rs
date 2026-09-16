@@ -29,7 +29,20 @@ fn builders_are_chainable() {
     let e = error("c").with_message("m").with_meta(json!({ "field": "email" }));
 
     assert_eq!(e.message().map(|m| m.as_ref()), Some("m"));
-    assert_eq!(e.meta(), Some(&json!({ "field": "email" })));
+    assert_eq!(e.meta(), json!({ "field": "email" }).as_object());
+}
+
+#[test]
+fn with_meta_keeps_the_wire_value_an_object() {
+    assert_eq!(error("c").with_meta(json!(null)).meta(), None);
+    assert_eq!(
+        error("c").with_meta(json!(42)).meta(),
+        json!({ "value": 42 }).as_object()
+    );
+    assert_eq!(
+        error("c").with_meta("text").meta(),
+        json!({ "value": "text" }).as_object()
+    );
 }
 
 #[test]
@@ -55,7 +68,7 @@ fn to_error_message_carries_code_message_and_meta() {
     let msg = e.to_error_message();
     assert_eq!(msg.code, "c");
     assert_eq!(msg.message.as_deref(), Some("m"));
-    assert_eq!(msg.meta, Some(json!({ "x": 1 })));
+    assert_eq!(msg.meta.as_ref(), json!({ "x": 1 }).as_object());
 }
 
 #[test]
@@ -328,7 +341,7 @@ fn map_code_rewrites_the_code_and_carries_everything_else() {
 
     assert_eq!(*outer.code(), "lookup:db_error");
     assert_eq!(outer.message().map(|m| m.as_ref()), Some("connection lost"));
-    assert_eq!(outer.meta(), Some(&json!({ "table": "clans" })));
+    assert_eq!(outer.meta(), json!({ "table": "clans" }).as_object());
     assert_eq!(
         outer.error_source().and_then(|s| s.pointer.as_deref()),
         Some("/data/attributes/name")

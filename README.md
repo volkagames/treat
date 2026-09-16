@@ -251,7 +251,7 @@ The `treat` facade re-exports functionality behind feature flags.
 | `actix-telemetry`   | OpenTelemetry context propagation for actix.                        |
 | `tower-middleware`  | tower request id and root span middleware.                          |
 | `tower-telemetry`   | OpenTelemetry context propagation for tower.                        |
-| `spantrace`         | Capture tracing span traces on errors.                              |
+| `spantrace`         | Span traces on errors; also needs `ErrorLayer` (docs/errors.md).    |
 | `backtrace`         | Capture backtraces on errors.                                       |
 | `verbose-error`     | Serialize full cause chains to clients.                             |
 | `error-status-500`  | Default an error with no explicit status to `500` instead of `200`. |

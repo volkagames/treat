@@ -113,7 +113,7 @@ pub struct ApiErrorInner<C: ApiErrorCode> {
     // (captured via `#[track_caller]`) and the source chain tamper-proof.
     pub(crate) code: C,
     pub(crate) message: Option<Cow<'static, str>>,
-    pub(crate) meta: Option<serde_json::Value>,
+    pub(crate) meta: Option<serde_json::Map<String, serde_json::Value>>,
     pub(crate) error_source: Option<ErrorSource>,
     pub(crate) type_uri: Option<Cow<'static, str>>,
     pub(crate) instance: Option<String>,
@@ -159,7 +159,7 @@ impl<C: ApiErrorCode> ApiError<C> {
         self.source.as_ref().map(|v| v.as_ref())
     }
 
-    pub fn meta(&self) -> Option<&serde_json::Value> {
+    pub fn meta(&self) -> Option<&serde_json::Map<String, serde_json::Value>> {
         self.meta.as_ref()
     }
 
@@ -286,8 +286,17 @@ impl<C: ApiErrorCode> ApiError<C> {
         self
     }
 
+    /// Attach structured context.
+    ///
+    /// `meta` is a JSON object on the wire (JSON:API), so a client can type it as
+    /// one: an object is stored as is, `null` clears it, and any other value is
+    /// kept under a `"value"` key rather than dropped.
     pub fn with_meta(mut self, meta: impl Into<serde_json::Value>) -> Self {
-        self.boxed.meta = Some(meta.into());
+        self.boxed.meta = match meta.into() {
+            serde_json::Value::Object(map) => Some(map),
+            serde_json::Value::Null => None,
+            other => Some(serde_json::Map::from_iter([("value".to_string(), other)])),
+        };
         self
     }
 
@@ -570,7 +579,7 @@ pub trait ApiErrorHandler: Debug + Send + Sync {
     fn code(&self) -> String;
     fn message(&self) -> Option<&Cow<'static, str>>;
     fn source(&self) -> Option<&erris::Report>;
-    fn meta(&self) -> Option<&serde_json::Value>;
+    fn meta(&self) -> Option<&serde_json::Map<String, serde_json::Value>>;
     fn to_error_message(&self) -> ErrorMessage;
     fn format_message(&self) -> Option<String>;
     fn format_message_verbose(&self) -> Option<String>;
@@ -615,7 +624,7 @@ impl<C: ApiErrorCode> ApiErrorHandler for ApiError<C> {
         ApiError::<C>::source(self)
     }
 
-    fn meta(&self) -> Option<&serde_json::Value> {
+    fn meta(&self) -> Option<&serde_json::Map<String, serde_json::Value>> {
         ApiError::<C>::meta(self)
     }
 
@@ -666,8 +675,10 @@ impl<C: ApiErrorCode> std::fmt::Debug for ApiError<C> {
                     "spantrace",
                     #[cfg(feature = "spantrace")]
                     &self.spantrace,
+                    // `erris::SpanTrace` exists only under erris's own `spantrace`
+                    // feature; `None` renders the same whatever its type.
                     #[cfg(not(feature = "spantrace"))]
-                    &Option::<erris::SpanTrace>::None,
+                    &Option::<()>::None,
                 )
                 .finish();
         }

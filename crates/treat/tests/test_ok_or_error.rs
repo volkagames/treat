@@ -186,5 +186,5 @@ fn ok_or_api_code_keeps_the_full_error_the_from_impl_built() {
     assert_eq!(e.status(), 403);
     assert!(e.has_status());
     assert_eq!(e.message().map(|m| m.as_ref()), Some("access denied"));
-    assert_eq!(e.meta(), Some(&serde_json::json!({ "scope": "admin" })));
+    assert_eq!(e.meta(), serde_json::json!({ "scope": "admin" }).as_object());
 }

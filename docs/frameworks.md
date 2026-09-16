@@ -149,6 +149,9 @@ With `actix-telemetry`, the root span also extracts the incoming OpenTelemetry
 context from request headers and records the `trace_id`, so distributed traces
 stitch together across services.
 
+The root span this opens is where an error's span trace ends. The trace itself
+is not on by default: see [span traces](errors.md#span-traces).
+
 ## Observability middleware (tower: axum / poem)
 
 The `tower-middleware` feature ships the same request-id + root span for
@@ -182,6 +185,9 @@ poem can consume the same layer through its tower-compat shim:
 use poem::middleware::TowerLayerCompatExt;
 let app = route.with(treat::tower::TraceLayer::new().compat());
 ```
+
+The root span this opens is where an error's span trace ends. The trace itself
+is not on by default: see [span traces](errors.md#span-traces).
 
 ## Request-id propagation
 

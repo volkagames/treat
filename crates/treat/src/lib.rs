@@ -77,7 +77,7 @@
 //! | `validator-extract` | `ApiJson<T>` / `ApiValidated<T>` request extractors (needs `axum`/`actix`) |
 //! | `openapi` | `utoipa::ToSchema` on the envelope + response data |
 //! | `meta-slots` | ready-made typed `meta` payloads (`Pagination`, `RateLimit`) |
-//! | `spantrace` / `backtrace` | capture a span-/back-trace on every error |
+//! | `spantrace` / `backtrace` | capture a span-/back-trace on every error; span traces also need `ErrorLayer` |
 //! | `verbose-error` | always serialize the full cause chain |
 //! | `nightly-provide` | `std::error::Error::provide` support (**requires nightly**) |
 

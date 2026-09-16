@@ -37,7 +37,7 @@ requires a nightly toolchain.
 | `validator-extract`  | `ApiValidated<T>` extractors; also enables `validator` + `serde-path`                        |
 | `meta-slots`         | ready-made typed `meta` payloads (`Pagination`, `RateLimit`)                                 |
 | `openapi`            | `utoipa::ToSchema` bounds on response data                                                   |
-| `spantrace`          | capture a `tracing` span-trace on every error                                                |
+| `spantrace`          | span-trace on every error; also needs `ErrorLayer`, see [errors.md](errors.md#span-traces)   |
 | `backtrace`          | capture a backtrace on every error                                                           |
 | `verbose-error`      | always serialize the full cause chain to clients                                             |
 | `error-status-500`   | default an unset error status to `500` instead of `200`                                      |

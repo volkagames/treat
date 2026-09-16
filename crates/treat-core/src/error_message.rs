@@ -61,8 +61,9 @@ pub struct ErrorMessage {
     /// Where the error originated (JSON:API `source`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<ErrorSource>,
+    /// Structured context; always a JSON object on the wire (JSON:API).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub meta: Option<serde_json::Value>,
+    pub meta: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 impl ErrorMessage {
@@ -101,7 +102,7 @@ impl From<ErrorMessage> for serde_json::Value {
         }
 
         if let Some(meta) = err.meta {
-            map.insert("meta".into(), meta);
+            map.insert("meta".into(), meta.into());
         }
 
         map.into()
