@@ -28,3 +28,8 @@ unwrap_used = "deny"
 
 [workspace.lints.rust]
 double_negations = "deny"
+
+# TODO(erris-3): drop after publishing
+[patch.crates-io]
+erris = { path = "../../alfatm/erris/crates/erris" }
+erris-meta = { path = "../../alfatm/erris/crates/erris-meta" }

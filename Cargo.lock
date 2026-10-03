@@ -736,9 +736,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "erris"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b7bcbdfc7f456ee58a5b9874a341c3a7c616a43f6c988d0c398e9085527b508"
+version = "3.1.0"
 dependencies = [
  "erris-meta",
  "indenter",
@@ -751,8 +749,6 @@ dependencies = [
 [[package]]
 name = "erris-meta"
 version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0543a635c82bfa20a1c2075dbb49ba2d31074d8c50e583a931dc2078be0d0f36"
 dependencies = [
  "tracing-error",
 ]
