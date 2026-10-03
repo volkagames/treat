@@ -16,35 +16,44 @@ impl<T: ResponseData, M: ResponseData> ApiResponse<T, M> {
         self.errors.first()
     }
 
-    pub fn inner<'a, E: From<&'a ErrorMessage> + Into<erris::Report>>(&'a self) -> erris::Result<Option<&'a T>, E> {
+    // `erris::Result` is spelled out as std's here and below: with erris `tracked` on it becomes
+    // `TrackedResult`, which takes no error type, so a generic `E` needs the std result.
+    pub fn inner<'a, E: From<&'a ErrorMessage> + Into<erris::Report>>(
+        &'a self,
+    ) -> std::result::Result<Option<&'a T>, E> {
         if let Some(err) = self.errors.first() {
             return Err(E::from(err));
         }
         Ok(self.data.as_ref())
     }
 
-    pub fn into_inner<E: From<ErrorMessage> + Into<erris::Report>>(self) -> erris::Result<Option<T>, E> {
+    pub fn into_inner<E: From<ErrorMessage> + Into<erris::Report>>(self) -> std::result::Result<Option<T>, E> {
         if let Some(err) = self.errors.into_iter().next() {
             return Err(E::from(err));
         }
         Ok(self.data)
     }
 
+    // Variants are named through `erris::Result` so they resolve to the tracking ones when erris
+    // `tracked` is on, and to std's otherwise.
     pub fn inner_data(&self) -> erris::Result<&T> {
         if let Some(err) = self.errors.first() {
-            return Err(erris::report!("{err}"));
+            return erris::Result::Err(erris::report!("{err}"));
         }
-        self.data
-            .as_ref()
-            .ok_or_else(|| erris::report!("missing field data in response"))
+        match self.data.as_ref() {
+            Some(data) => erris::Result::Ok(data),
+            None => erris::Result::Err(erris::report!("missing field data in response")),
+        }
     }
 
     pub fn into_inner_data(self) -> erris::Result<T> {
         if let Some(err) = self.errors.first() {
-            return Err(erris::report!("{err}"));
+            return erris::Result::Err(erris::report!("{err}"));
         }
-        self.data
-            .ok_or_else(|| erris::report!("missing field data in response"))
+        match self.data {
+            Some(data) => erris::Result::Ok(data),
+            None => erris::Result::Err(erris::report!("missing field data in response")),
+        }
     }
 }
 
