@@ -257,8 +257,9 @@ The `treat` facade re-exports functionality behind feature flags.
 | `error-status-500`  | Default an error with no explicit status to `500` instead of `200`. |
 | `rpc-status-header` | Add an `X-RPC-Status: ok` / `error` header to every response.       |
 | `nightly-provide`   | `std::error::Error::provide` support. Requires nightly.             |
+| `tracked`           | `WrapApiError` on erris `TrackedResult`. Requires nightly.          |
 
-The crate builds on stable Rust unless `nightly-provide` is enabled.
+The crate builds on stable Rust unless `nightly-provide` or `tracked` is enabled.
 
 ## Documentation
 

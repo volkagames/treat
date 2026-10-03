@@ -38,6 +38,10 @@ publish:
 test *args='':
     cargo nextest run --run-ignored default {{ if PROFILE == "release" { "--release" } else { "" } }} $args
 
+# `WrapApiError` on erris's `TrackedResult`; nightly only.
+test-tracked *args='':
+    cargo +nightly nextest run -p treat --features tracked --test test_tracked_wrap $args
+
 test-integration *args='':
     cargo nextest run --run-ignored ignored-only {{ if PROFILE == "release" { "--release" } else { "" } }} $args
 

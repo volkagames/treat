@@ -153,6 +153,51 @@ where
     }
 }
 
+/// `erris::Result` under erris's nightly `tracked` mode. The type exists only
+/// there, hence treat's own `tracked` feature; each method hands off to the std
+/// `Result` impl, and `#[track_caller]` keeps the caller's location.
+#[cfg(feature = "tracked")]
+impl<T, C: ApiErrorCode> WrapApiError<T, C> for erris::TrackedResult<T> {
+    #[track_caller]
+    fn wrap_api_error(self, code: C) -> Result<T, ApiError<C>> {
+        self.into_std().wrap_api_error(code)
+    }
+
+    #[track_caller]
+    fn wrap_api_code(self, code: C) -> Result<T, ApiError<C>>
+    where
+        C: Into<ApiError<C>>,
+    {
+        self.into_std().wrap_api_code(code)
+    }
+
+    #[track_caller]
+    fn wrap_api_error_default(self) -> Result<T, ApiError<C>>
+    where
+        C: Default + Into<ApiError<C>>,
+    {
+        self.into_std().wrap_api_error_default()
+    }
+
+    #[track_caller]
+    fn wrap_api_error_and_message(
+        self,
+        code: C,
+        message: impl Into<std::borrow::Cow<'static, str>>,
+    ) -> Result<T, ApiError<C>> {
+        self.into_std().wrap_api_error_and_message(code, message)
+    }
+
+    #[track_caller]
+    fn wrap_api_error_with<F, M>(self, f: F) -> Result<T, ApiError<C>>
+    where
+        F: FnOnce() -> (C, M),
+        M: Into<std::borrow::Cow<'static, str>>,
+    {
+        self.into_std().wrap_api_error_with(f)
+    }
+}
+
 pub trait WithErrorCode: Into<erris::Report> {
     /// Attach `code` to this report.
     ///

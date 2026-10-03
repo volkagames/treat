@@ -27,6 +27,9 @@ poem = ["dep:poem"]
 rpc-status-header = []
 serde-path = ["dep:serde_path_to_error"]
 spantrace = ["erris/spantrace"]
+# Nightly only: implements `WrapApiError` for `erris::TrackedResult` and turns on
+# erris's `tracked` mode (not additive: it changes `erris::Result` for the whole build).
+tracked = ["erris/tracked"]
 validator = ["dep:validator", "validator/derive"]
 # Auto-validating request extractor (`ApiValidated<T>` -> `Validated<T>`).
 # The `FromRequest` impls additionally require an `axum`/`actix` feature.
