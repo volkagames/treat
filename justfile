@@ -38,7 +38,7 @@ publish:
 test *args='':
     cargo nextest run --run-ignored default {{ if PROFILE == "release" { "--release" } else { "" } }} $args
 
-# `WrapApiError` on erris's `TrackedResult`; nightly only.
+# treat's extension traits on erris's `TrackedResult`; nightly only.
 test-tracked *args='':
     cargo +nightly nextest run -p treat --features tracked --test test_tracked_wrap $args
 

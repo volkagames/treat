@@ -1,4 +1,7 @@
 //! Coverage for `WrapApiError` (on `Result`) and `WithErrorCode` (on `Report`).
+// Std `Result` coverage: with erris `tracked` on, `erris::Result` is `TrackedResult`
+// (see `test_tracked_wrap.rs`), so these don't compile there.
+#![cfg(not(feature = "tracked"))]
 
 use treat::{ApiError, ApiErrorHandler, WithErrorCode, WrapApiError, error};
 

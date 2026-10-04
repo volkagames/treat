@@ -64,3 +64,16 @@ where
         }
     }
 }
+
+/// `erris::Result` under erris's nightly `tracked` mode; hands off to the std
+/// `Result` impl, and `#[track_caller]` keeps the caller's location.
+#[cfg(feature = "tracked")]
+impl<T: ResponseData, C: ApiErrorCode> ApiResponseTrack<T, C> for erris::TrackedResult<T> {
+    #[track_caller]
+    fn track_api_response(self) -> Result<ApiResponse<T, NoMeta>, ApiError<C>>
+    where
+        C: Default,
+    {
+        self.into_std().track_api_response()
+    }
+}

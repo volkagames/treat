@@ -1,5 +1,8 @@
 //! Coverage for `ApiError::track` and the `ApiErrorTrack::track_api_error`
 //! extension. Both preludes are imported to assert the trait sets don't clash.
+// Std `Result` coverage: with erris `tracked` on, `erris::Result` is `TrackedResult`
+// (see `test_tracked_wrap.rs`), so these don't compile there.
+#![cfg(not(feature = "tracked"))]
 #![allow(unused_imports)]
 
 use erris::prelude::*;

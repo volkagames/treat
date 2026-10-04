@@ -1,10 +1,11 @@
-//! Coverage for `WrapApiError` on erris's `TrackedResult` (the `tracked` feature, nightly).
+//! Coverage for `WrapApiError` and `ApiResponseTrack` on erris's `TrackedResult`
+//! (the `tracked` feature, nightly).
 //!
 //! Run with `cargo +nightly nextest run -p treat --features tracked --test test_tracked_wrap`.
 #![cfg(feature = "tracked")]
 
 use erris::tracked::{Err, Ok};
-use treat::{ApiError, ApiErrorHandler, WrapApiError};
+use treat::{ApiError, ApiErrorHandler, ApiResponse, ApiResponseTrack, WrapApiError};
 
 #[derive(Clone, Debug, Default, treat::ApiErrorCode)]
 enum Code {
@@ -72,4 +73,19 @@ fn reports_the_caller_location() {
         "location pointed at {}, not the call site",
         location.file(),
     );
+}
+
+#[test]
+fn track_api_response_wraps_ok_in_success() {
+    let ok: erris::TrackedResult<u32> = Ok(7);
+    let response: Result<ApiResponse<u32>, ApiError<Code>> = ok.track_api_response();
+    assert_eq!(response.expect("ok").into_inner_data().into_std().expect("data"), 7);
+}
+
+#[test]
+fn track_api_response_defaults_the_code_and_keeps_the_source() {
+    let converted: Result<ApiResponse<u32>, ApiError<Code>> = failed().track_api_response();
+    let e = converted.expect_err("defaulted");
+    assert!(matches!(e.code(), Code::Internal));
+    assert_eq!(e.source().map(ToString::to_string).as_deref(), Some("boom"));
 }
