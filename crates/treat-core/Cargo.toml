@@ -13,7 +13,8 @@ version.workspace = true
 
 [features]
 actix = ["dep:actix-web"]
-axum = ["dep:axum"]
+# With `tracked`, also makes an `erris::Result<T, ApiError>` an axum response.
+axum = ["dep:axum", "erris/axum"]
 backtrace = ["erris/backtrace"]
 # Default the transport status of an error with no explicit status to `500`
 # instead of `200`. Does not affect errors that set a status explicitly.
@@ -27,7 +28,8 @@ poem = ["dep:poem"]
 rpc-status-header = []
 serde-path = ["dep:serde_path_to_error"]
 spantrace = ["erris/spantrace"]
-# Nightly only: implements `WrapApiError` for `erris::TrackedResult` and turns on
+# Nightly only: implements `WrapApiError` for `erris::TrackedResult`, lets an
+# `ApiError` be the error of an `erris::Result<T, ApiError>`, and turns on
 # erris's `tracked` mode (not additive: it changes `erris::Result` for the whole build).
 tracked = ["erris/tracked"]
 validator = ["dep:validator", "validator/derive"]

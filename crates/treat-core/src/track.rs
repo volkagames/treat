@@ -65,15 +65,49 @@ where
     }
 }
 
-/// `erris::Result` under erris's nightly `tracked` mode; hands off to the std
-/// `Result` impl, and `#[track_caller]` keeps the caller's location.
+/// `erris::Result` under erris's nightly `tracked` mode, over a `Report` or
+/// another tracked error; hands off to the std `Result` impl, and
+/// `#[track_caller]` keeps the caller's location.
 #[cfg(feature = "tracked")]
-impl<T: ResponseData, C: ApiErrorCode> ApiResponseTrack<T, C> for erris::TrackedResult<T> {
+impl<T, E, C> ApiResponseTrack<T, C> for erris::TrackedResult<T, E>
+where
+    T: ResponseData,
+    E: erris::tracked::TrackedError + erris::IntoReport + Send + Sync + 'static,
+    C: ApiErrorCode,
+{
     #[track_caller]
     fn track_api_response(self) -> Result<ApiResponse<T, NoMeta>, ApiError<C>>
     where
         C: Default,
     {
         self.into_std().track_api_response()
+    }
+}
+
+/// Lets an `ApiError` be the error of an `erris::Result<T, ApiError<C>>` under
+/// erris's nightly `tracked` mode: handlers then use the same `Ok`/`Err` as the
+/// code they call, and every `?` records its hop on the error's source chain,
+/// as [`ApiError::track`] does. With erris's `axum` feature (which treat's
+/// `axum` turns on) such a result is an axum response.
+///
+/// A `?` on the line the error was raised on — `error(..)?`,
+/// `.wrap_api_error(..)?` — adds no second frame.
+#[cfg(feature = "tracked")]
+impl<C: ApiErrorCode> erris::tracked::TrackedError for ApiError<C> {
+    #[track_caller]
+    fn track_hop(self) -> Self {
+        let here = std::panic::Location::caller();
+        let on_this_line = |top: &crate::Location| top.file() == here.file() && top.line() == here.line();
+        let raised_here = on_this_line(self.boxed.location);
+        let tracked_here = self
+            .boxed
+            .source
+            .as_ref()
+            .is_some_and(|source| on_this_line(source.location()));
+        if raised_here || tracked_here {
+            self
+        } else {
+            self.track()
+        }
     }
 }

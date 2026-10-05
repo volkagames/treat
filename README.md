@@ -257,12 +257,27 @@ The `treat` facade re-exports functionality behind feature flags.
 | `error-status-500`  | Default an error with no explicit status to `500` instead of `200`. |
 | `rpc-status-header` | Add an `X-RPC-Status: ok` / `error` header to every response.       |
 | `nightly-provide`   | `std::error::Error::provide` support. Requires nightly.             |
-| `tracked`           | `Result` extensions on erris `TrackedResult`. Requires nightly.     |
+| `tracked`           | erris `TrackedResult` support, `ApiError` as its error. Nightly.    |
 
 The crate builds on stable Rust unless `nightly-provide` or `tracked` is enabled.
 
 `tracked` is not additive: it turns on erris's `tracked` mode, which makes
 `erris::Result` a `TrackedResult` across the whole build, your own code included.
+
+With `tracked`, `ApiError` can be the error of an `erris::Result`, so handlers
+use the same prelude `Ok`/`Err` as the code they call, and every `?` records its
+hop on the error. With `axum` too, such a result is a handler's return type:
+
+```rust
+use erris::prelude::*;
+
+type ApiResult<T> = erris::Result<T, ApiError<Code>>;
+
+async fn get_user(Path(id): Path<u64>) -> ApiResult<ApiResponse<User>> {
+    let user = load_user(id).await.wrap_api_error(Code::NotFound)?;
+    Ok(success(user))
+}
+```
 
 ## Documentation
 

@@ -736,10 +736,11 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "erris"
-version = "3.1.0"
+version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54ffe206723c0d3f4fe4b2f3b69c5d8c75ce5ef55f8a6c4f3156d91892e1fe30"
+checksum = "4ef20bb1fdb3554a549b9bb8f4ff6e3a15c475525b64262f8faad1e3f04706b4"
 dependencies = [
+ "axum-core",
  "erris-meta",
  "indenter",
  "tracing",

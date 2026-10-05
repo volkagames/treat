@@ -38,9 +38,10 @@ publish:
 test *args='':
     cargo nextest run --run-ignored default {{ if PROFILE == "release" { "--release" } else { "" } }} $args
 
-# treat's extension traits on erris's `TrackedResult`; nightly only.
+# treat's extension traits on erris's `TrackedResult` and `ApiError` as its
+# error, axum handlers included; nightly only.
 test-tracked *args='':
-    cargo +nightly nextest run -p treat --features tracked --test test_tracked_wrap $args
+    cargo +nightly nextest run -p treat --features tracked,axum --test test_tracked_wrap --test test_tracked_api_error $args
 
 test-integration *args='':
     cargo nextest run --run-ignored ignored-only {{ if PROFILE == "release" { "--release" } else { "" } }} $args

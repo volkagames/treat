@@ -155,9 +155,15 @@ where
 
 /// `erris::Result` under erris's nightly `tracked` mode. The type exists only
 /// there, hence treat's own `tracked` feature; each method hands off to the std
-/// `Result` impl, and `#[track_caller]` keeps the caller's location.
+/// `Result` impl, and `#[track_caller]` keeps the caller's location. The error
+/// is a `Report` or another tracked error — an `ApiError` re-reported under a
+/// new code is kept as the source, as with a std `Result`.
 #[cfg(feature = "tracked")]
-impl<T, C: ApiErrorCode> WrapApiError<T, C> for erris::TrackedResult<T> {
+impl<T, E, C> WrapApiError<T, C> for erris::TrackedResult<T, E>
+where
+    E: erris::tracked::TrackedError + erris::IntoReport + Send + Sync + 'static,
+    C: ApiErrorCode,
+{
     #[track_caller]
     fn wrap_api_error(self, code: C) -> Result<T, ApiError<C>> {
         self.into_std().wrap_api_error(code)
