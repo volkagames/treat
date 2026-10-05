@@ -71,12 +71,16 @@ fn adapters_share_one_resolution_rule() {
     assert_eq!(resolve_status(error("boom").status()), DEFAULT_ERROR_STATUS);
 }
 
+// The check is a `debug_assert!`, so release builds have nothing to panic on.
+#[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "invalid HTTP status")]
 fn with_status_rejects_an_out_of_range_value_in_debug() {
     let _ = error("boom").with_status(9999);
 }
 
+// The check is a `debug_assert!`, so release builds have nothing to panic on.
+#[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "invalid HTTP status")]
 fn with_code_status_rejects_a_bogus_mapping_in_debug() {
