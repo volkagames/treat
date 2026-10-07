@@ -123,6 +123,9 @@ pub struct ApiErrorInner<C: ApiErrorCode> {
     pub(crate) source: Option<Arc<erris::Report>>,
     pub(crate) verbose: bool,
     pub(crate) location: &'static Location,
+    /// Where [`ApiError::track`] saw the error on its way up, in the order it
+    /// passed them. Kept apart from `source`: a hop is not a cause.
+    pub(crate) hops: Vec<&'static Location>,
     #[cfg(feature = "spantrace")]
     pub(crate) spantrace: erris::SpanTrace,
 }
@@ -157,6 +160,13 @@ impl<C: ApiErrorCode> ApiError<C> {
 
     pub fn source(&self) -> Option<&erris::Report> {
         self.source.as_ref().map(|v| v.as_ref())
+    }
+
+    /// The locations [`track`](Self::track) recorded, in the order the error
+    /// passed them on its way up. The raise location is
+    /// [`location`](ApiErrorHandler::location), not the first hop.
+    pub fn hops(&self) -> &[&'static Location] {
+        &self.hops
     }
 
     pub fn meta(&self) -> Option<&serde_json::Map<String, serde_json::Value>> {
@@ -265,10 +275,13 @@ impl<C: ApiErrorCode> ApiError<C> {
     }
 
     pub fn format_message_verbose(&self) -> Option<String> {
-        match (&self.message, &self.source) {
+        // A transparent report (`erris::report!()`) renders as nothing; treat it
+        // as no source rather than leave a dangling separator.
+        let source = self.source.as_ref().map(ToString::to_string).filter(|s| !s.is_empty());
+        match (&self.message, source) {
             (Some(message), Some(source)) => Some(format!("{message}, {source}")),
             (Some(message), None) => Some(message.to_string()),
-            (None, Some(source)) => Some(format!("{source}")),
+            (None, Some(source)) => Some(source),
             (None, None) => None,
         }
     }
@@ -384,10 +397,14 @@ impl<C: ApiErrorCode> ApiError<C> {
         self
     }
 
+    /// Record the caller as a hop the error passed on its way up; see
+    /// [`hops`](Self::hops). The source chain is left alone, so a tracked
+    /// error renders and logs at the same level as an untracked one.
     #[inline]
     #[track_caller]
-    pub fn track(self) -> Self {
-        self.with_source(erris::Report::new_transparent())
+    pub fn track(mut self) -> Self {
+        self.boxed.hops.push(std::panic::Location::caller());
+        self
     }
 
     /// Rewrite the code, carrying everything else over untouched.
@@ -396,8 +413,8 @@ impl<C: ApiErrorCode> ApiError<C> {
     /// the code type its caller answers with — a shared check reporting through
     /// a narrow code set that each caller widens into its own, or a domain code
     /// translated at a layer boundary. Only the code changes; `message`, `meta`,
-    /// the locator, `type`/`instance`, the status, the source chain and the
-    /// verbose flag travel with it.
+    /// the locator, `type`/`instance`, the status, the source chain, the
+    /// tracked hops and the verbose flag travel with it.
     ///
     /// This cannot be written outside the crate: the fields are private, and
     /// rebuilding the error from the accessors would lose the source chain
@@ -432,6 +449,7 @@ impl<C: ApiErrorCode> ApiError<C> {
                 source: inner.source,
                 verbose: inner.verbose,
                 location: inner.location,
+                hops: inner.hops,
                 #[cfg(feature = "spantrace")]
                 spantrace: inner.spantrace,
             }),
@@ -523,6 +541,7 @@ pub fn error<C: ApiErrorCode>(code: C) -> ApiError<C> {
             source: None,
             verbose: false,
             location: std::panic::Location::caller(),
+            hops: Vec::new(),
             #[cfg(feature = "spantrace")]
             spantrace: erris::SpanTrace::capture(),
         }),
@@ -543,6 +562,7 @@ pub fn error_and_message<C: ApiErrorCode>(code: C, message: impl Into<Cow<'stati
             source: None,
             verbose: false,
             location: std::panic::Location::caller(),
+            hops: Vec::new(),
             #[cfg(feature = "spantrace")]
             spantrace: erris::SpanTrace::capture(),
         }),
@@ -563,6 +583,7 @@ pub fn wrap_error<C: ApiErrorCode>(err: erris::Report, code: C, message: impl In
             source: Some(Arc::new(err)),
             verbose: false,
             location: std::panic::Location::caller(),
+            hops: Vec::new(),
             #[cfg(feature = "spantrace")]
             spantrace: erris::SpanTrace::capture(),
         }),
@@ -605,6 +626,24 @@ pub trait ApiErrorHandler: Debug + Send + Sync {
     /// [`error()`]. The single most useful field for tracing a failure back to
     /// its origin, and unreachable once the code type is erased.
     fn location(&self) -> &'static Location;
+
+    /// The hops [`ApiError::track`] recorded, as [`ApiError::hops`] reports
+    /// them.
+    fn hops(&self) -> &[&'static Location] {
+        &[]
+    }
+
+    /// The [`hops`](Self::hops) for a log field, outermost first like the
+    /// `Location:` list of the error's `Debug`; `None` for an untracked error,
+    /// so the field is left out.
+    fn format_hops(&self) -> Option<String> {
+        let hops = self.hops();
+        if hops.is_empty() {
+            return None;
+        }
+        let hops: Vec<String> = hops.iter().rev().map(ToString::to_string).collect();
+        Some(hops.join(", "))
+    }
 }
 
 impl<C: ApiErrorCode> ApiErrorHandler for ApiError<C> {
@@ -655,6 +694,10 @@ impl<C: ApiErrorCode> ApiErrorHandler for ApiError<C> {
     fn location(&self) -> &'static Location {
         self.location
     }
+
+    fn hops(&self) -> &[&'static Location] {
+        ApiError::<C>::hops(self)
+    }
 }
 
 impl<C: ApiErrorCode> std::fmt::Debug for ApiError<C> {
@@ -683,11 +726,73 @@ impl<C: ApiErrorCode> std::fmt::Debug for ApiError<C> {
                 .finish();
         }
 
-        // `erris::debug_error_chain` renders a `ReportError`, and building one
-        // needs an owned error — hence the clone. It copies the `ApiErrorInner`
-        // box and bumps the source `Arc`'s refcount; the cause chain itself is
-        // shared, not deep-copied. Use `{:#?}` for an allocation-free field dump.
-        let report = erris::Report::from_error(self.clone());
-        erris::debug_error_chain(&report, f)
+        // Laid out like `erris::debug_error_chain`, which cannot be reused: it
+        // only knows the locations of erris's own links, so it would show
+        // neither where this error was raised nor its hops.
+        write!(f, "{self}")?;
+
+        let mut causes: Vec<String> = Vec::new();
+        for link in self.source().into_iter().flat_map(erris::Report::chain) {
+            // A transparent link re-renders the link below it, or nothing at all.
+            if link.is_transparent() {
+                continue;
+            }
+            let rendered = link.as_error().to_string();
+            if causes.last() != Some(&rendered) {
+                causes.push(rendered);
+            }
+        }
+        if !causes.is_empty() {
+            write!(f, "\n\nCaused by:")?;
+            for (n, cause) in causes.iter().enumerate() {
+                write_numbered(f, n, cause)?;
+            }
+        }
+
+        // Outermost first: the last hop, back to the raise site, then down
+        // the source chain.
+        let mut locations: Vec<&'static Location> = Vec::new();
+        let source_locations = self
+            .source()
+            .into_iter()
+            .flat_map(|source| source.chain().filter_map(|link| link.location()));
+        for location in self
+            .hops
+            .iter()
+            .rev()
+            .copied()
+            .chain([self.location])
+            .chain(source_locations)
+        {
+            if locations.last() != Some(&location) {
+                locations.push(location);
+            }
+        }
+        write!(f, "\n\nLocation:")?;
+        for (n, location) in locations.iter().enumerate() {
+            write_numbered(f, n, location)?;
+        }
+
+        #[cfg(feature = "spantrace")]
+        write!(f, "\n\nSpanTrace: \n{}", self.spantrace)?;
+
+        #[cfg(feature = "backtrace")]
+        if let Some(backtrace) = self.source().and_then(|source| source.backtrace()) {
+            write!(f, "\n\nBacktrace: \n{backtrace}")?;
+        }
+
+        Ok(())
     }
+}
+
+/// One numbered entry of a `Debug` list, continuation lines aligned under the
+/// first, as erris prints them.
+fn write_numbered(f: &mut std::fmt::Formatter, n: usize, entry: &dyn Display) -> std::fmt::Result {
+    let entry = entry.to_string();
+    let mut lines = entry.lines();
+    write!(f, "\n{n:>4}: {}", lines.next().unwrap_or_default())?;
+    for line in lines {
+        write!(f, "\n      {line}")?;
+    }
+    Ok(())
 }

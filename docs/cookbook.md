@@ -52,8 +52,8 @@ ApiResponse::from(vec![1u8, 2, 3]).with_meta(Meta { total: 100 })
 
 ## Add breadcrumbs as an error bubbles up
 
-`track_api_error()` records each layer it passes through, so verbose/`Debug`
-output shows the full path:
+`track_api_error()` records each layer it passes through, so `Debug` output
+and the `error_hops` log field show the full path:
 
 ```rust
 use treat::prelude::*;

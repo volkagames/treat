@@ -16,11 +16,11 @@ telemetry = ["dep:opentelemetry", "dep:tracing-opentelemetry"]
 
 [dependencies]
 http = "1"
-opentelemetry = { version = "0.32", optional = true }
+opentelemetry = { version = "0.33", optional = true }
 pin-project = "1"
 tower = { version = "0.5", features = ["util"] }
 tracing = { version = "0.1", features = ["log"] }
-tracing-opentelemetry = { version = "0.33", optional = true }
+tracing-opentelemetry = { version = "0.34", optional = true }
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]

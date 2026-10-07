@@ -88,3 +88,32 @@ fn foreign_error_uses_the_generic_arm() {
     assert!(logs.contains("request error"), "expected the generic arm: {logs}");
     assert!(!logs.contains("error_code"), "unexpected structured code: {logs}");
 }
+
+/// The raise location and the tracked hops reach the log.
+#[test]
+fn logger_emits_the_location_and_hops() {
+    let raise = line!() + 1;
+    let e = error(MyCode::Boom).with_message("m");
+    let hop = line!() + 1;
+    let err: actix_web::Error = e.track().into();
+    let logs = capture(|| treat::error_log_for::<MyCode>(&err));
+    assert!(logs.contains("error_location="), "no location: {logs}");
+    assert!(
+        logs.contains(&format!("test_actix_logger.rs:{raise}:")),
+        "raise site missing: {logs}"
+    );
+    assert!(logs.contains("error_hops="), "no hops: {logs}");
+    assert!(
+        logs.contains(&format!("test_actix_logger.rs:{hop}:")),
+        "hop missing: {logs}"
+    );
+}
+
+/// An untracked error has no hops field at all.
+#[test]
+fn logger_omits_hops_for_an_untracked_error() {
+    let err: actix_web::Error = error(MyCode::Boom).with_message("m").into();
+    let logs = capture(|| treat::error_log_for::<MyCode>(&err));
+    assert!(logs.contains("error_location="), "no location: {logs}");
+    assert!(!logs.contains("error_hops"), "unexpected hops: {logs}");
+}

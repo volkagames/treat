@@ -187,13 +187,25 @@ fn verbose_response_keeps_a_mixed_chain() {
     assert!(!json.contains("treat error:"), "internal prefix leaked: {json}");
 }
 
-// `track()` inserts transparent wrappers that render as empty text; they must
-// not pad messages with stray separators.
+// Hops recorded by `track()` are not causes; they must not pad messages with
+// stray separators.
 #[test]
-fn verbose_response_ignores_transparent_track_wrappers() {
+fn verbose_response_ignores_track_hops() {
     let e = error("db").with_message("m").track().track().with_verbose();
     let resp = e.into_api_response::<()>();
     assert_eq!(resp.errors[0].message.as_deref(), Some("m"));
+}
+
+// A transparent report renders as empty text; it must not leave a dangling
+// separator in the verbose message either.
+#[test]
+fn verbose_message_ignores_a_transparent_source() {
+    let e = error("db")
+        .with_message("m")
+        .with_error(erris::report!())
+        .with_verbose();
+    assert_eq!(e.format_message_verbose().as_deref(), Some("m"));
+    assert_eq!(e.to_string(), "treat error: db, message: m");
 }
 
 // The non-verbose default must stay quiet: causes belong in the logs, not the

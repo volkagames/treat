@@ -86,8 +86,8 @@ where
 
 /// Lets an `ApiError` be the error of an `erris::Result<T, ApiError<C>>` under
 /// erris's nightly `tracked` mode: handlers then use the same `Ok`/`Err` as the
-/// code they call, and every `?` records its hop on the error's source chain,
-/// as [`ApiError::track`] does. With erris's `axum` feature (which treat's
+/// code they call, and every `?` records its hop in [`ApiError::hops`], as
+/// [`ApiError::track`] does. With erris's `axum` feature (which treat's
 /// `axum` turns on) such a result is an axum response.
 ///
 /// A `?` on the line the error was raised on — `error(..)?`,
@@ -99,11 +99,7 @@ impl<C: ApiErrorCode> erris::tracked::TrackedError for ApiError<C> {
         let here = std::panic::Location::caller();
         let on_this_line = |top: &crate::Location| top.file() == here.file() && top.line() == here.line();
         let raised_here = on_this_line(self.boxed.location);
-        let tracked_here = self
-            .boxed
-            .source
-            .as_ref()
-            .is_some_and(|source| on_this_line(source.location()));
+        let tracked_here = self.boxed.hops.last().is_some_and(|hop| on_this_line(hop));
         if raised_here || tracked_here {
             self
         } else {

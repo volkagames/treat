@@ -134,11 +134,13 @@ where
 /// logs at `debug!`. This is the last point that still holds the `erris` report —
 /// past it only the code and message reach the client.
 pub fn error_log(err: &dyn ApiErrorHandler) {
+    let hops = err.format_hops();
     match err.source() {
         Some(report) => {
             tracing::error!(
                 error_code = %err.code(),
                 error_location = %err.location(),
+                error_hops = hops.as_deref(),
                 cause = ?report,
                 "{}",
                 err.format_message_verbose().unwrap_or_default()
@@ -148,6 +150,7 @@ pub fn error_log(err: &dyn ApiErrorHandler) {
             tracing::debug!(
                 error_code = %err.code(),
                 error_location = %err.location(),
+                error_hops = hops.as_deref(),
                 "{}",
                 err.format_message().unwrap_or_default()
             )
@@ -160,6 +163,7 @@ pub fn info_log(err: &dyn ApiErrorHandler) {
     tracing::info!(
         error_code = %err.code(),
         error_location = %err.location(),
+        error_hops = err.format_hops().as_deref(),
         cause = ?err.source(),
         "{}",
         err.format_message().unwrap_or_default()
@@ -171,6 +175,7 @@ pub fn debug_log(err: &dyn ApiErrorHandler) {
     tracing::debug!(
         error_code = %err.code(),
         error_location = %err.location(),
+        error_hops = err.format_hops().as_deref(),
         cause = ?err.source(),
         "{}",
         err.format_message().unwrap_or_default()

@@ -21,21 +21,9 @@ enum Code {
 
 type ApiResult<T> = erris::Result<T, ApiError<Code>>;
 
-/// Lines of the frames `?` added to the error's source chain, outermost first.
-/// `ApiError::track` may add several links per hop, all on the hop's line.
+/// Lines of the hops `?` recorded on the error, in the order it passed them.
 fn hop_lines(e: &ApiError<Code>) -> Vec<u32> {
-    let mut lines: Vec<u32> = e
-        .source()
-        .map(|source| {
-            source
-                .chain()
-                .filter_map(|link| link.location())
-                .map(|location| location.line())
-                .collect()
-        })
-        .unwrap_or_default();
-    lines.dedup();
-    lines
+    e.hops().iter().map(|hop| hop.line()).collect()
 }
 
 const RAISE: u32 = line!() + 2;
@@ -59,7 +47,8 @@ fn question_mark_tracks_every_hop() {
     let e = top().unwrap_err();
     assert!(matches!(e.code(), Code::NotFound));
     assert_eq!(ApiErrorHandler::location(&e).line(), RAISE);
-    assert_eq!(hop_lines(&e), [TOP, MID]);
+    assert_eq!(hop_lines(&e), [MID, TOP]);
+    assert!(e.source().is_none(), "a hop is not a cause");
 }
 
 #[test]
@@ -78,7 +67,7 @@ fn a_hop_on_the_raise_line_is_not_recorded() {
     }
     let e = wrapped().unwrap_err();
     assert_eq!(e.source().map(ToString::to_string).as_deref(), Some("boom"));
-    assert_eq!(hop_lines(&e).len(), 1, "only the report's own frame");
+    assert!(hop_lines(&e).is_empty());
 }
 
 #[test]

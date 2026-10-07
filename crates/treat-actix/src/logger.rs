@@ -7,6 +7,7 @@ use std::future::{Future, Ready, ready};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tracing::Span;
+use treat_core::ApiErrorHandler;
 
 #[derive(Clone)]
 pub struct Logger<RootSpan: RootSpanBuilder, L: Fn(&actix_web::Error) + Clone> {
@@ -220,12 +221,28 @@ fn log_api_error<C: treat_core::ApiErrorCode + 'static>(err: &actix_web::Error, 
         return false;
     };
     let message = err.format_message().unwrap_or_default();
+    let location = ApiErrorHandler::location(err);
+    let hops = err.format_hops();
     // `tracing` needs a const level per call site, so the arms are spelled out.
     match level {
         tracing::Level::ERROR => {
-            tracing::error!(error_code = %err.code(), error_source = ?err.source(), %message)
+            tracing::error!(
+                error_code = %err.code(),
+                error_location = %location,
+                error_hops = hops.as_deref(),
+                error_source = ?err.source(),
+                %message
+            )
         }
-        _ => tracing::debug!(error_code = %err.code(), error_source = ?err.source(), %message),
+        _ => {
+            tracing::debug!(
+                error_code = %err.code(),
+                error_location = %location,
+                error_hops = hops.as_deref(),
+                error_source = ?err.source(),
+                %message
+            )
+        }
     }
     true
 }

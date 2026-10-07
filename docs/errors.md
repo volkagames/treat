@@ -205,18 +205,21 @@ use, so the wire format is identical across frameworks.
 
 ## Tracking (better debug trails)
 
-`track()` (on an error) and `track_api_error()` (on a `Result`) append the current
-location to the error as it bubbles up, so verbose / `Debug` output shows the full
-path it travelled:
+`track()` (on an error) and `track_api_error()` (on a `Result`) record the current
+location as a hop as the error bubbles up. `Debug` lists the hops above the raise
+location, `hops()` returns them, and the axum loggers write them to `error_hops`:
 
 ```rust
 use treat::prelude::*;
 # fn inner() -> Result<(), ApiError> { Err(treat::error("boom")) }
 fn outer() -> Result<(), ApiError> {
-    inner().track_api_error()?; // adds this frame
+    inner().track_api_error()?; // records this hop
     Ok(())
 }
 ```
+
+A hop is not a cause: `source()` and the verbose message stay as they were, so a
+tracked business error is still logged at `debug!` by `error_log`.
 
 ## Span traces
 

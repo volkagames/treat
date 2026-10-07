@@ -279,6 +279,19 @@ async fn get_user(Path(id): Path<u64>) -> ApiResult<ApiResponse<User>> {
 }
 ```
 
+A hop, whether from `?` under `tracked` or from an explicit `track()` /
+`track_api_error()`, is a `&'static Location` pushed onto the error's `hops()`.
+It does not touch the source chain, so it captures no span trace or backtrace,
+whatever the `spantrace` / `backtrace` features. The first hop allocates the
+list with room for four, and it grows by doubling after that, so tracking every
+layer of a deep call stack stays cheap. A `?` on the line the error was raised on
+records nothing. Nothing of this runs on the `Ok` path. Hops are rendered only
+when the error is: in `Debug` and in the loggers' `error_hops` field.
+
+While an error is still an `erris::Report` (before `wrap_api_error` turns it
+into an `ApiError`), each hop is erris's own: one small report per hop that
+reuses the span trace and backtrace already captured below it.
+
 ## Documentation
 
 - Handbook: [`docs/`](docs/), starting at [`docs/README.md`](docs/README.md).

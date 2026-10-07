@@ -56,22 +56,22 @@ serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt"] }
 tracing = { version = "0.1", features = [
-	"std",
-	"attributes",
-	"tracing-attributes",
-	"log",
-	"async-await",
-	"max_level_debug",
-	"release_max_level_info",
-	"valuable",
+    "std",
+    "attributes",
+    "tracing-attributes",
+    "log",
+    "async-await",
+    "max_level_debug",
+    "release_max_level_info",
+    "valuable",
 ] }
 tracing-subscriber = { version = "0.3.23", features = [
-	"json",
-	"registry",
-	"env-filter",
+    "json",
+    "registry",
+    "env-filter",
 ] }
 triomphe = "0.1.16"
-utoipa = { version = "5.5.0", features = ["axum_extras"] }
+utoipa = { version = "6.0.0", features = ["axum_extras"] }
 validator = { version = "0.21", features = ["derive"] }
 
 [[bench]]

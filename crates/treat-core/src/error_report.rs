@@ -128,8 +128,8 @@ const FOREIGN_CAUSE_SEPARATOR: &str = ", ";
 ///
 /// Also a no-op when there is no entry to attach to (the cause sits above every
 /// `ApiError` in the chain — the caller's own top-level entry already covers it)
-/// or when the text is empty, which is how erris renders the transparent
-/// wrappers that [`ApiError::track`] inserts.
+/// or when the text is empty, which is how erris renders a transparent report
+/// (`erris::report!()`).
 fn append_foreign_cause(err: &(dyn std::error::Error + 'static), output: &mut [ErrorMessage]) {
     if err.source().is_some() {
         return;
