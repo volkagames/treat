@@ -6,6 +6,7 @@
 //! The accessors differ per framework only because the response types do:
 //! `HttpResponse` is not an `http::Response`, and actix hands out its extensions
 //! behind a `Ref` guard.
+#![cfg(any(feature = "axum", feature = "actix", feature = "poem"))]
 
 use treat::error;
 
