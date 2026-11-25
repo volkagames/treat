@@ -323,7 +323,7 @@ fails silently: nothing errors, the trace is just not there.
 
 ```toml
 [dependencies]
-treat = { version = "0.26", features = ["axum", "spantrace"] }
+treat = { version = "0.27", features = ["axum", "spantrace"] }
 tracing-error = "0.2"
 tracing-subscriber = "0.3"
 ```
