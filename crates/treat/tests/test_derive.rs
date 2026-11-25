@@ -255,3 +255,41 @@ enum BraceCode {
 fn api_error_code_display_allows_braces_in_code() {
     assert_eq!(BraceCode::Weird.to_string(), "missing {field} value");
 }
+
+/// Without `#[code]`, `Display` writes the name serde writes: the variant's
+/// own `rename`, else the enum's `rename_all`, else the identifier — so the
+/// code in an envelope is the value as a JSON payload carries it.
+#[derive(Debug, Clone, Serialize, Deserialize, ApiErrorCode)]
+#[serde(rename_all = "snake_case")]
+enum SerdeNamed {
+    NotFound,
+    #[serde(rename = "gone")]
+    AlreadyGone,
+    #[code("things::locked")]
+    Locked,
+    #[message("slot {arg_0} is taken")]
+    Taken(u32),
+    #[serde(rename(serialize = "written", deserialize = "read"))]
+    Halves,
+}
+
+#[test]
+fn api_error_code_display_follows_serde_without_code() {
+    assert_eq!(SerdeNamed::NotFound.to_string(), "not_found");
+    assert_eq!(SerdeNamed::AlreadyGone.to_string(), "gone");
+    assert_eq!(SerdeNamed::Locked.to_string(), "things::locked", "`#[code]` wins");
+    assert_eq!(SerdeNamed::Taken(1).to_string(), "taken");
+    assert_eq!(SerdeNamed::Halves.to_string(), "written", "what serde writes");
+    for code in [SerdeNamed::NotFound, SerdeNamed::AlreadyGone, SerdeNamed::Taken(1)] {
+        let json = serde_json::to_value(&code).expect("serialize");
+        let name = match &json {
+            serde_json::Value::String(name) => name.clone(),
+            serde_json::Value::Object(map) => map.keys().next().cloned().unwrap_or_default(),
+            _ => String::new(),
+        };
+        assert_eq!(name, code.to_string(), "{json}");
+    }
+
+    let err: ApiError<SerdeNamed> = SerdeNamed::NotFound.into();
+    assert_eq!(err.to_error_message().code, "not_found");
+}

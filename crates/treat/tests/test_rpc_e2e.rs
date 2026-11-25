@@ -1341,3 +1341,27 @@ async fn a_refusal_is_read_only_up_to_its_limit() {
 fn the_refusal_limit_is_one_mebibyte() {
     assert_eq!(RpcClient::REFUSAL_LIMIT, 1 << 20);
 }
+
+/// A bare operation answered by a server that declares the failure in
+/// `x-rpc-status` but leaves it at a success status: the header wins over the
+/// status, so the client reads `errors[]` instead of the value.
+#[tokio::test]
+async fn a_bare_answer_declared_a_failure_is_read_from_errors() {
+    let declared = || {
+        std::future::ready(
+            (
+                axum::http::StatusCode::ACCEPTED,
+                [
+                    ("x-rpc-status", "error"),
+                    (header::CONTENT_TYPE.as_str(), "application/json"),
+                ],
+                r#"{"errors":[{"code":"not_found"}]}"#,
+            )
+                .into_response(),
+        )
+    };
+    let (client, _) = serve_router(Router::new().route("/declared", get(declared))).await;
+    let spec = http(HttpMethod::Get, "/declared", &[], &[], HttpBodyKind::None, false);
+    let refused: Called<Value> = client.call_http(&spec, &NoInput).await;
+    assert_eq!(api_code(&refused), Ok(ErrorCode::NotFound));
+}

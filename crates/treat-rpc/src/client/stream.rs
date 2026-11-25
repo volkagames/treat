@@ -1,7 +1,7 @@
 //! Subscriptions over Server-Sent Events and raw byte bodies (features
 //! `client` and `stream`, `treat`'s `rpc-client` and `rpc-stream`).
 
-use super::call::{envelope_failure, json_body, receive, refusal, send, transport};
+use super::call::{RpcStatus, envelope_failure, json_body, receive, refusal, rpc_status, send, transport};
 use super::query::{input_fields, to_query};
 use super::{ClientError, ClientResult, RpcClient};
 use crate::{QueryField, media};
@@ -296,27 +296,6 @@ fn rebuild<C>(response: reqwest::Response, prefix: Vec<u8>, ended: bool) -> Clie
     let url_only = std::mem::replace(&mut parts.extensions, extensions);
     parts.extensions.extend(url_only);
     Ok(reqwest::Response::from(http::Response::from_parts(parts, body)))
-}
-
-/// An outcome the `x-rpc-status` header declares.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RpcStatus {
-    Ok,
-    Error,
-}
-
-/// The outcome a response's `x-rpc-status` header declares, which a `treat`
-/// server with `rpc-status-header` sets on every answer; `None` when the header
-/// is absent or carries a value this client does not know.
-fn rpc_status(response: &reqwest::Response) -> Option<RpcStatus> {
-    let value = response.headers().get("x-rpc-status")?.to_str().ok()?.trim();
-    if value.eq_ignore_ascii_case("ok") {
-        return Some(RpcStatus::Ok);
-    }
-    if value.eq_ignore_ascii_case("error") {
-        return Some(RpcStatus::Error);
-    }
-    None
 }
 
 /// Whether a response's `Content-Type` is `expected`: its media type alone,

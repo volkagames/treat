@@ -59,9 +59,9 @@ variant implements `Undeclared`.
 `&Code` still works). `ALL`, `from_name` and `as_str` are trait items, so a
 caller needs `treat::rpc::WireEnum` in scope.
 
-`as_str`, serde and `Display` agree for certain only where names are spelled:
-`ApiErrorCode`'s `Display` reads `#[code]` and the identifier, never serde, so
-a variant serde renames needs a `#[code]` with the same string. serde's
+`as_str`, serde and `Display` write one string:
+`ApiErrorCode`'s `Display` reads `#[code]`, serde's name and the identifier in
+the same order, so a variant serde renames needs no `#[code]`. serde's
 `alias`, `other` and `skip_*` are not mirrored — `from_name` accepts the wire
 names only, and `ALL` lists every variant.
 
@@ -80,10 +80,10 @@ fn get(id: u64) -> Result<Thing, ApiError<GetCodes>> {
 ```
 
 A declared code becomes the set's variant, message, `meta` and HTTP status
-untouched. An undeclared one is a gap in the operation's `@throws`: a debug
-build asserts, pointing at the handler's `.narrow()`, a release build reports
-the set's `#[undeclared]` value with the raised code in `meta` under
-`undeclared_code`. Any registry that is `WireEnum + ApiErrorCode` narrows; the
+untouched. An undeclared one is a gap in the operation's `@throws`, reported
+in every build as the set's `#[undeclared]` value with the raised code in
+`meta` under `undeclared_code` — the service's failure, not a dropped
+request. Search the logs or the answers for that key to find the gaps. Any registry that is `WireEnum + ApiErrorCode` narrows; the
 generated one also implements `RuntimeCodes` to tell the runtime which of its
 codes are `invalid_body` and `internal_error`.
 
@@ -206,7 +206,10 @@ body is read only when the `Content-Type`'s media type is exactly
 `application/x-www-form-urlencoded` (any case, any parameters). `respond_http`
 answers an enveloped operation as `respond` does — the service returns an
 `ApiResponse` — and a bare one as `respond_bare`: the value itself, and a
-failure left at `200` at `500`.
+failure at any `2xx` status at `500`, since only the status tells it from a
+success. A JSON-bodied `ANY` route called without a body, as a `GET` is, reads
+its input from the query string instead; a route without path fields does not
+read the path at all.
 
 The context is the project's: it implements `ResolveContext` (resolve the
 caller from the request parts, or refuse), and the generated server's

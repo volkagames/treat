@@ -89,13 +89,21 @@ pub fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
         has_status |= status.is_some();
     }
 
+    // A variant's code is its `#[code]`, else the name serde writes for it,
+    // else its identifier (a raw one unprefixed: `r#type` is `type`) — the
+    // order `WireEnum` reads too, so `Display`, `as_str` and serde agree on a
+    // variant whichever of them spells its name.
+    let rename_all = crate::serde_name::serde_rename_all(&input.attrs)?;
     let mut display_impl: Vec<TokenStream> = Vec::with_capacity(variants.len());
     for variant in variants {
         let ident = &variant.ident;
-        // A raw identifier is written unprefixed (`r#type` is `type`), as serde
-        // and `WireEnum` spell it, so the three agree on a variant with no
-        // `#[code]`.
-        let code = crate::fetch_code_from_attrs(&variant.attrs)?.unwrap_or_else(|| ident.unraw().to_string());
+        let code = match crate::fetch_code_from_attrs(&variant.attrs)? {
+            Some(code) => code,
+            None => {
+                let written = crate::serde_name::serde_written_name(variant, &rename_all)?;
+                written.unwrap_or_else(|| ident.unraw().to_string())
+            }
+        };
         display_impl.push(match variant.fields {
             Fields::Unit => {
                 quote! {

@@ -1,4 +1,5 @@
-use proc_macro2::{Span, TokenStream};
+use crate::serde_name::{Halves, RenameRule, serde_half, serde_key, serde_rename_all};
+use proc_macro2::TokenStream;
 use quote::quote;
 use syn::ext::IdentExt;
 use syn::spanned::Spanned;
@@ -151,36 +152,6 @@ fn wire_name(variant: &Variant, rename_all: &Halves<(LitStr, RenameRule)>) -> sy
     }
 }
 
-/// The name one half of serde gives a variant, where serde was told it.
-struct SerdeName {
-    name: String,
-    span: Span,
-    source: &'static str,
-}
-
-/// One half's name: the variant's own `rename`, else the enum's `rename_all`
-/// rule applied to the (unraw) identifier; `None` when serde was told neither
-/// and writes the identifier.
-fn serde_half(renamed: Option<LitStr>, rename_all: Option<&(LitStr, RenameRule)>, ident: &str) -> Option<SerdeName> {
-    match (renamed, rename_all) {
-        (Some(lit), _) => {
-            Some(SerdeName {
-                name: lit.value(),
-                span: lit.span(),
-                source: "#[serde(rename)]",
-            })
-        }
-        (None, Some((lit, rule))) => {
-            Some(SerdeName {
-                name: rule.apply(ident),
-                span: lit.span(),
-                source: "#[serde(rename_all)]",
-            })
-        }
-        (None, None) => None,
-    }
-}
-
 /// The `#[undeclared]` attribute of a variant, if it has one.
 fn undeclared_marker(variant: &Variant) -> syn::Result<Option<&syn::Attribute>> {
     let attr = variant.attrs.iter().find(|attr| attr.path().is_ident("undeclared"));
@@ -193,133 +164,4 @@ fn undeclared_marker(variant: &Variant) -> syn::Result<Option<&syn::Attribute>> 
         })?;
     }
     Ok(attr)
-}
-
-/// The `serialize` and `deserialize` halves of a serde key; `key = "..."`
-/// sets both.
-struct Halves<T> {
-    serialize: Option<T>,
-    deserialize: Option<T>,
-}
-
-/// The enum's `#[serde(rename_all = "...")]`, per half, with the rule each
-/// half names.
-fn serde_rename_all(attrs: &[syn::Attribute]) -> syn::Result<Halves<(LitStr, RenameRule)>> {
-    let lits = serde_key(attrs, "rename_all")?;
-    Ok(Halves {
-        serialize: lits.serialize.map(with_rule).transpose()?,
-        deserialize: lits.deserialize.map(with_rule).transpose()?,
-    })
-}
-
-/// A `rename_all` value with the rule it names; an unknown rule is an error
-/// here rather than a silently wrong name, though serde would refuse it too.
-fn with_rule(lit: LitStr) -> syn::Result<(LitStr, RenameRule)> {
-    let rule = RenameRule::from_str(&lit.value())
-        .ok_or_else(|| syn::Error::new(lit.span(), format!("unknown serde rename rule `{}`", lit.value())))?;
-    Ok((lit, rule))
-}
-
-/// The halves a `#[serde(key = "...")]` or `#[serde(key(serialize = "...",
-/// deserialize = "..."))]` gives, across every `#[serde]` attribute. Other
-/// serde keys (`alias`, `other`, `skip_*`, ...) are skipped unread: serde
-/// validates them itself, and none of them changes the one name a variant is
-/// written with.
-fn serde_key(attrs: &[syn::Attribute], key: &str) -> syn::Result<Halves<LitStr>> {
-    let mut found = Halves {
-        serialize: None,
-        deserialize: None,
-    };
-    for attr in attrs.iter().filter(|attr| attr.path().is_ident("serde")) {
-        attr.parse_nested_meta(|meta| {
-            if !meta.path.is_ident(key) {
-                return skip_value(&meta);
-            }
-            if meta.input.peek(syn::Token![=]) {
-                let value = meta.value()?;
-                let lit: LitStr = value.parse()?;
-                found.serialize = Some(lit.clone());
-                found.deserialize = Some(lit);
-                return Ok(());
-            }
-            meta.parse_nested_meta(|half| {
-                let value = half.value()?;
-                let lit: LitStr = value.parse()?;
-                if half.path.is_ident("serialize") {
-                    found.serialize = Some(lit);
-                } else if half.path.is_ident("deserialize") {
-                    found.deserialize = Some(lit);
-                }
-                Ok(())
-            })
-        })?;
-    }
-    Ok(found)
-}
-
-/// Consume the value of a serde key this derive does not read, up to the next
-/// comma: `= "..."`, a parenthesised list, or nothing for a bare flag.
-fn skip_value(meta: &syn::meta::ParseNestedMeta<'_>) -> syn::Result<()> {
-    let input = meta.input;
-    while !input.is_empty() && !input.peek(syn::Token![,]) {
-        input.parse::<proc_macro2::TokenTree>()?;
-    }
-    Ok(())
-}
-
-/// serde's `rename_all` rules, applied to a variant the way serde applies them.
-#[derive(Clone, Copy)]
-enum RenameRule {
-    Lower,
-    Upper,
-    Pascal,
-    Camel,
-    Snake,
-    ScreamingSnake,
-    Kebab,
-    ScreamingKebab,
-}
-
-impl RenameRule {
-    fn from_str(rule: &str) -> Option<Self> {
-        Some(match rule {
-            "lowercase" => Self::Lower,
-            "UPPERCASE" => Self::Upper,
-            "PascalCase" => Self::Pascal,
-            "camelCase" => Self::Camel,
-            "snake_case" => Self::Snake,
-            "SCREAMING_SNAKE_CASE" => Self::ScreamingSnake,
-            "kebab-case" => Self::Kebab,
-            "SCREAMING-KEBAB-CASE" => Self::ScreamingKebab,
-            _ => return None,
-        })
-    }
-
-    /// The name serde gives the variant `ident` under this rule (serde's
-    /// `RenameRule::apply_to_variant`).
-    fn apply(self, ident: &str) -> String {
-        match self {
-            Self::Pascal => ident.to_string(),
-            Self::Lower => ident.to_ascii_lowercase(),
-            Self::Upper => ident.to_ascii_uppercase(),
-            Self::Camel => {
-                let mut chars = ident.chars();
-                let first = chars.next().map(|first| first.to_ascii_lowercase());
-                first.into_iter().chain(chars).collect()
-            }
-            Self::Snake => {
-                let mut snake = String::with_capacity(ident.len());
-                for (index, ch) in ident.char_indices() {
-                    if index > 0 && ch.is_uppercase() {
-                        snake.push('_');
-                    }
-                    snake.push(ch.to_ascii_lowercase());
-                }
-                snake
-            }
-            Self::ScreamingSnake => Self::Snake.apply(ident).to_ascii_uppercase(),
-            Self::Kebab => Self::Snake.apply(ident).replace('_', "-"),
-            Self::ScreamingKebab => Self::ScreamingSnake.apply(ident).replace('_', "-"),
-        }
-    }
 }

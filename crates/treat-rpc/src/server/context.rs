@@ -55,12 +55,12 @@ pub trait ResolveContext: Sized + Send + Sync + 'static {
     /// operation is reached. Answering with the envelope and a code the
     /// registry lists for it is the conventional shape.
     ///
-    /// An `@http` handler answers a rejection left at `200` with `401`, since
+    /// An `@http` handler answers a rejection left at a `2xx` with `401`, since
     /// its callers read the status line. A rejection that is not about the
     /// caller — the session store unreachable — must carry its own status
     /// (`503`, `500`), which is kept, or such a caller reads it as a sign-out.
     ///
-    /// "Left at `200`" is literal. Under `treat`'s `error-status-500` feature
+    /// "Left at a `2xx`" is literal. Under `treat`'s `error-status-500` feature
     /// a refusal built from an `ApiError` without a status of its own already
     /// carries `500`, which is then kept like any other: an `@http` caller
     /// gets `500` rather than `401` (and rather than an access check's `403`).

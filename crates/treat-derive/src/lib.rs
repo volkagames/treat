@@ -5,6 +5,7 @@ use quote::quote;
 mod api_error;
 mod api_error_code;
 mod from_error_message;
+mod serde_name;
 mod wire_enum;
 
 use from_error_message::impl_from_error_message;
@@ -109,14 +110,16 @@ pub fn derive_api_error(input: TokenStream) -> TokenStream {
 
 /// Turn an enum into a **typed error code** usable as `ApiError<YourEnum>`.
 ///
-/// Generates `Display` (the wire code — the variant name by default, a raw
-/// identifier unprefixed, overridable with `#[code("...")]`) plus
-/// `From<YourEnum> for ApiError<YourEnum>`.
+/// Generates `Display` (the wire code: `#[code("...")]`, else the name serde
+/// writes — the variant's `#[serde(rename)]` or the enum's
+/// `#[serde(rename_all)]` — else the variant name, a raw identifier
+/// unprefixed) plus `From<YourEnum> for ApiError<YourEnum>`.
 /// `#[message("...")]` is a format string interpolated over the variant's
 /// fields; tuple fields are named `arg_0`, `arg_1`, ...
 ///
-/// Prefer setting `#[code("...")]` on every variant: the default is the variant
-/// name verbatim (`NotFound`, not `not_found`), which does not match the
+/// Prefer setting `#[code("...")]` on every variant: without it or a serde
+/// rename the code is the variant name verbatim (`NotFound`, not `not_found`),
+/// which does not match the
 /// `snake_case` convention used elsewhere here, and it silently changes if the
 /// Rust variant is renamed. The default is kept for backwards compatibility.
 ///
@@ -173,9 +176,9 @@ pub fn derive_api_error_code(input: TokenStream) -> TokenStream {
 /// Only those keys are read. `#[serde(alias)]`, `#[serde(other)]` and
 /// `#[serde(skip_*)]` are not mirrored: `from_name` accepts exactly the wire
 /// names, and `ALL` lists every variant, skipped or not. `ApiErrorCode`'s
-/// `Display` reads `#[code]` and the identifier only, never serde — so the
-/// three writers agree for certain where every variant whose serde name is not
-/// its identifier spells `#[code]`.
+/// `Display` reads `#[code]`, serde's `rename` / `rename_all` and the
+/// identifier in the same order, so `Display`, `as_str` and serde write one
+/// string.
 ///
 /// Mark one variant `#[undeclared]` to also implement `treat::rpc::Undeclared`:
 /// the value `Narrow::narrow` reports a code the set does not declare as.

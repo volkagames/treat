@@ -11,12 +11,11 @@ use crate::{ApiError, ApiErrorCode};
 /// `r#type` is `type`). The derive refuses an enum where `#[code]` and serde
 /// disagree, and one serde would write and read under different names.
 ///
-/// `as_str`, serde and `Display` write one string for certain only where the
-/// names are spelled: `Display` from the `ApiErrorCode` derive reads `#[code]`
-/// and the identifier, never serde, so a variant serde renames (by `rename` or
-/// `rename_all`) needs `#[code]` with the same string for its `Display` to
-/// match. serde's `alias`, `other` and `skip_*` are not mirrored either:
-/// `from_name` accepts the wire names only, and `ALL` lists every variant.
+/// `as_str`, serde and `Display` from the `ApiErrorCode` derive write one
+/// string: that derive reads `#[code]`, serde's `rename` / `rename_all` and the
+/// identifier in the same order. serde's `alias`, `other` and `skip_*` are not
+/// mirrored: `from_name` accepts the wire names only, and `ALL` lists every
+/// variant.
 ///
 /// The runtime reads codes by name instead of through serde because a name is
 /// what crosses between code sets: a flat registry and the narrower set an
@@ -78,11 +77,10 @@ pub type Failure<R> = ApiError<R>;
 /// A declared code becomes that set's variant and nothing else changes. An
 /// undeclared one is a gap in the operation's `@throws`: it is reported as the
 /// set's [`Undeclared`] value with the raised code in `meta` under
-/// [`UNDECLARED_CODE_META`], and a debug build asserts instead, so the gap
-/// surfaces in tests rather than in production traffic.
+/// [`UNDECLARED_CODE_META`], in every build: it is the service's failure, not
+/// a reason to drop the request, and the `meta` entry is what finds the gap.
 pub trait Narrow<T> {
     /// Map the error onto the code set `C` by wire name.
-    #[track_caller]
     fn narrow<C>(self) -> Result<T, ApiError<C>>
     where
         C: ApiErrorCode + WireEnum + Undeclared;
@@ -95,15 +93,10 @@ impl<T, R> Narrow<T> for Result<T, ApiError<R>>
 where
     R: WireEnum + ApiErrorCode,
 {
-    #[track_caller]
     fn narrow<C>(self) -> Result<T, ApiError<C>>
     where
         C: ApiErrorCode + WireEnum + Undeclared,
     {
-        // A `match` rather than `map_err` with a closure: the closure would be
-        // a function of its own without `#[track_caller]`, and the debug
-        // assertion below would point here instead of at the handler's
-        // `.narrow()`.
         let failure = match self {
             Ok(value) => return Ok(value),
             Err(failure) => failure,
@@ -116,11 +109,6 @@ where
         let narrowed = match declared {
             Some(declared) => failure.map_code(|_| declared),
             None => {
-                debug_assert!(
-                    false,
-                    "`{raised}` was raised but not declared by `{}`; add it to the operation's `@throws`",
-                    std::any::type_name::<C>(),
-                );
                 // The raised code is merged into whatever diagnostics the check
                 // below already attached, because this branch is the untested
                 // path and its `meta` is what says why.

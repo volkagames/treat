@@ -20,7 +20,7 @@ use treat_core::{ApiError, ApiErrorCode};
 pub struct Refusal(Box<Response>);
 
 impl Refusal {
-    /// The refusal with `status` unless it carries one other than `200`; see
+    /// The refusal with `status` unless it carries one outside `2xx`; see
     /// [`http_status`].
     #[must_use]
     pub fn or_status(self, status: StatusCode) -> Self {

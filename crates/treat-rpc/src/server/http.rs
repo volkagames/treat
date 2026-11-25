@@ -3,9 +3,10 @@
 
 use super::handler::WireCode;
 use super::{Ctx, QueryField, Refusal};
-use crate::{HttpBodyKind, HttpSpec, Runtime, RuntimeCodes, media};
+use crate::{HttpBodyKind, HttpMethod, HttpSpec, Runtime, RuntimeCodes, media};
 use axum::body::Bytes;
 use axum::extract::{FromRequest, FromRequestParts, RawPathParams, Request};
+use axum::http::request::Parts;
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::de::DeserializeOwned;
@@ -21,9 +22,11 @@ use validator::Validate;
 /// whatever the body's rejection carried (`413` for one too large). A missing
 /// session answers `401` and a denied one `403`, and the service's own failure
 /// of an operation answered bare `500`: there a `200` would read as success.
-/// A status the failure already carries other than `200` is kept.
+/// A status the failure already carries outside `2xx` is kept; one inside it
+/// is replaced, since a caller reading the status line would take any `2xx`
+/// for success.
 pub fn http_status(mut response: Response, status: StatusCode) -> Response {
-    if response.status() == StatusCode::OK {
+    if response.status().is_success() {
         *response.status_mut() = status;
     }
     response
@@ -82,9 +85,12 @@ impl<R: RuntimeCodes> Runtime<R> {
     /// The rest of the input, by `spec.body`:
     ///
     /// - [`HttpBodyKind::Json`]: the body is the input object; one that does
-    ///   not parse is refused with a pointer to where it went wrong. The query
-    ///   string is not read. Nor is the `Content-Type` checked, unlike an RPC
-    ///   body's ([`Runtime::no_input`] says why that matters): an endpoint
+    ///   not parse is refused with a pointer to where it went wrong. The
+    ///   query string is not read, except under [`HttpMethod::Any`] when the
+    ///   body is empty, as a `GET` sends it: then the input is read from the
+    ///   query string as for [`HttpBodyKind::None`]. Nor is the
+    ///   `Content-Type` checked, unlike an RPC body's ([`Runtime::no_input`]
+    ///   says why that matters): an endpoint
     ///   bound to HTTP keeps whatever contract its callers already have, so
     ///   one a cross-origin page must not reach needs its own guard, such as
     ///   a `SameSite` session cookie.
@@ -97,23 +103,25 @@ impl<R: RuntimeCodes> Runtime<R> {
     /// - [`HttpBodyKind::None`]: the query string only.
     pub async fn read_http_input<T: DeserializeOwned>(request: Request, spec: &HttpSpec) -> Result<T, Refusal> {
         let (mut parts, request_body) = request.into_parts();
-        let params = RawPathParams::from_request_parts(&mut parts, &()).await;
-        let params = match params {
-            Ok(params) => params,
-            Err(rejection) => return Err(Self::invalid_query(&rejection.body_text(), None).into()),
-        };
-        let mut path_values = Vec::new();
-        for (key, raw) in params.iter().filter(|(key, _)| spec.path_fields.contains(key)) {
-            let value = Self::path_value(spec.fields, key, raw)?;
-            path_values.push((key.to_string(), value));
-        }
+        let path_values = Self::path_values(&mut parts, spec).await?;
 
         if spec.body == HttpBodyKind::Json {
+            let query = parts.uri.query().unwrap_or_default().to_string();
             let request = Request::from_parts(parts, request_body);
             // At the envelope's status, like every other refusal here, so
             // `http_input` answers it `400`; one that could not be read keeps
             // the status of axum's rejection (`413`).
-            let mut object: Map<String, Value> = Self::read_json(request, StatusCode::OK).await?;
+            let bytes = Self::read_body(request).await?;
+            // An `ANY` route called without a body — a `GET` among its callers
+            // has none to send — reads its query string instead, as a route
+            // without a body does, rather than dropping what the URL carries.
+            if spec.method == HttpMethod::Any && bytes.is_empty() {
+                let pairs = Self::url_pairs(query.as_bytes())?;
+                let mut object = Self::object_from_pairs(&pairs, spec.fields)?;
+                object.extend(path_values);
+                return Self::input_from_object(object);
+            }
+            let mut object: Map<String, Value> = Self::parse_json(&bytes, StatusCode::OK)?;
             object.extend(path_values);
             return deserialize_value(Value::Object(object)).map_err(|parse_error| {
                 parse_error
@@ -140,6 +148,31 @@ impl<R: RuntimeCodes> Runtime<R> {
         let mut object = Self::object_from_pairs(&pairs, spec.fields)?;
         object.extend(path_values);
         Self::input_from_object(object)
+    }
+
+    /// The path parameters `spec.path_fields` names, each typed as its field
+    /// declares.
+    ///
+    /// The route's parameters are not looked at when the operation reads none
+    /// of them, so a handler without path fields runs outside a router's
+    /// matched route (a `route_service`, a test's `oneshot`) too. axum decodes
+    /// every parameter of the route at once, so one the operation does not
+    /// read that is not UTF-8 still refuses the request when it reads others.
+    async fn path_values(parts: &mut Parts, spec: &HttpSpec) -> Result<Vec<(String, Value)>, Refusal> {
+        if spec.path_fields.is_empty() {
+            return Ok(Vec::new());
+        }
+        let params = RawPathParams::from_request_parts(parts, &()).await;
+        let params = match params {
+            Ok(params) => params,
+            Err(rejection) => return Err(Self::invalid_query(&rejection.body_text(), None).into()),
+        };
+        let mut path_values = Vec::new();
+        for (key, raw) in params.iter().filter(|(key, _)| spec.path_fields.contains(key)) {
+            let value = Self::path_value(spec.fields, key, raw)?;
+            path_values.push((key.to_string(), value));
+        }
+        Ok(path_values)
     }
 
     /// One path parameter as the JSON value its field declares — a list

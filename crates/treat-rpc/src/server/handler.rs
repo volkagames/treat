@@ -201,17 +201,26 @@ impl<R: RuntimeCodes> Runtime<R> {
         request: Request,
         parse_status: StatusCode,
     ) -> Result<T, Refusal> {
+        let bytes = Self::read_body(request).await?;
+        Self::parse_json(&bytes, parse_status)
+    }
+
+    /// The whole body of `request`; one that cannot be read is refused at the
+    /// status axum's rejection carries (`413` for one over the router's limit).
+    pub(crate) async fn read_body(request: Request) -> Result<Bytes, Refusal> {
         let read = Bytes::from_request(request, &()).await;
-        let bytes = match read {
-            Ok(bytes) => bytes,
-            Err(rejection) => {
-                let refusal = error(WireCode(R::INVALID_BODY))
-                    .with_message(rejection.body_text())
-                    .with_status(rejection.status().as_u16());
-                return Err(refusal.into());
-            }
-        };
-        deserialize_body::<T>(&bytes).map_err(|parse_error| {
+        read.map_err(|rejection| {
+            error(WireCode(R::INVALID_BODY))
+                .with_message(rejection.body_text())
+                .with_status(rejection.status().as_u16())
+                .into()
+        })
+    }
+
+    /// `bytes` parsed as `T`; JSON that does not parse is refused at
+    /// `parse_status`, with the pointer `serde-path` found.
+    pub(crate) fn parse_json<T: DeserializeOwned>(bytes: &[u8], parse_status: StatusCode) -> Result<T, Refusal> {
+        deserialize_body::<T>(bytes).map_err(|parse_error| {
             parse_error
                 .map_code(|_| WireCode(R::INVALID_BODY))
                 .with_status(parse_status.as_u16())
@@ -243,10 +252,11 @@ impl<R: RuntimeCodes> Runtime<R> {
 
     /// Answer with an `@http(envelope: false)` operation's result: the value
     /// itself as the JSON body, or the failure's envelope at `500` unless the
-    /// failure set a status.
+    /// failure set a status outside `2xx`.
     ///
     /// A bare success is told from a failure by its status alone, so a failure
-    /// the service left at `200` cannot stay there. With feature
+    /// cannot go out at a success status: one the service left at `200`, or
+    /// gave another `2xx`, answers `500`. With feature
     /// `rpc-status-header` a success carries `x-rpc-status: ok`, as an
     /// envelope would.
     ///
@@ -275,7 +285,7 @@ impl<R: RuntimeCodes> Runtime<R> {
     ///   `errors[]` reports. A failure is its envelope at the status it carries,
     ///   as [`Runtime::respond`] answers it.
     /// - Bare, as [`Runtime::respond_bare`]: the value itself, and a failure
-    ///   left at `200` answered `500`.
+    ///   at a `2xx` status answered `500`.
     ///
     /// Together with [`Runtime::http_input`] (`400`), [`Runtime::http_session`]
     /// (`401`) and [`Runtime::http_access`] (`403`), these are the statuses an

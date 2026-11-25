@@ -164,11 +164,35 @@ pub(crate) async fn send<C>(request: reqwest::RequestBuilder) -> Result<reqwest:
     })
 }
 
-/// Read the whole of `response` as [`read_answer`] does.
+/// Read the whole of `response` as [`read_answer`] does; one declared
+/// `x-rpc-status: error` is read as the envelope whatever `envelope` says,
+/// since that is how a failure travels.
 pub(crate) async fn receive<O: DeserializeOwned, C>(response: reqwest::Response, envelope: bool) -> ClientResult<O, C> {
     let status = response.status();
+    let declared_failure = rpc_status(&response) == Some(RpcStatus::Error);
     let body = response.bytes().await.map_err(transport)?;
-    read_answer(status, &body, envelope)
+    read_answer(status, &body, envelope || declared_failure)
+}
+
+/// An outcome the `x-rpc-status` header declares.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RpcStatus {
+    Ok,
+    Error,
+}
+
+/// The outcome a response's `x-rpc-status` header declares, which a `treat`
+/// server with `rpc-status-header` sets on every answer; `None` when the header
+/// is absent or carries a value this client does not know.
+pub(crate) fn rpc_status(response: &reqwest::Response) -> Option<RpcStatus> {
+    let value = response.headers().get("x-rpc-status")?.to_str().ok()?.trim();
+    if value.eq_ignore_ascii_case("ok") {
+        return Some(RpcStatus::Ok);
+    }
+    if value.eq_ignore_ascii_case("error") {
+        return Some(RpcStatus::Error);
+    }
+    None
 }
 
 /// Read `response` as [`read_refusal`] does, up to

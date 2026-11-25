@@ -92,11 +92,10 @@ fn declared_code_keeps_message_and_meta() {
     assert!(err.meta().expect("meta").get(UNDECLARED_CODE_META).is_none());
 }
 
-/// A debug build asserts on a code the set does not declare, so the gap in
-/// `@throws` shows up in tests; a release build reports it as the set's
-/// `#[undeclared]` value with the raised code merged into `meta`.
+/// A code the set does not declare is reported, in every build, as the set's
+/// `#[undeclared]` value with the raised code merged into `meta`: never a
+/// panic, which would drop the request in a debug build.
 #[test]
-#[cfg_attr(debug_assertions, should_panic(expected = "`not_found` was raised but not declared"))]
 fn undeclared_code_becomes_the_undeclared_value() {
     let err = get(false, false).expect_err("not found");
     assert_eq!(*err.code(), GetCodes::InternalError);
@@ -138,41 +137,10 @@ fn registry_without_runtime_codes_narrows() {
     assert_eq!(*err.code(), ListCodes::NotFound);
 }
 
-std::thread_local! {
-    /// Where the last panic on this thread was raised, as the hook below saw it.
-    static PANIC_AT: std::cell::Cell<Option<(String, u32)>> = const { std::cell::Cell::new(None) };
-}
-
-/// A debug build's assertion on an undeclared code points at the handler's
-/// `.narrow()`, not into `treat`: that line is where the missing `@throws`
-/// entry belongs.
-///
-/// The location comes from a panic hook, the one place a panic's location is
-/// visible. The hook is process-wide, so it records into a thread-local (each
-/// test runs on its own thread) and hands every panic on to the previous hook.
+/// Narrowing an undeclared code does not panic, in a debug build either.
 #[test]
-fn undeclared_code_panics_at_the_callers_narrow() {
-    static HOOK: std::sync::Once = std::sync::Once::new();
-    HOOK.call_once(|| {
-        let previous = std::panic::take_hook();
-        std::panic::set_hook(Box::new(move |info| {
-            let at = info
-                .location()
-                .map(|location| (location.file().to_string(), location.line()));
-            PANIC_AT.set(at);
-            previous(info);
-        }));
-    });
-
-    // The `.narrow()` call is on the line after this one.
-    let line = line!() + 1;
+fn undeclared_code_does_not_panic() {
     let caught = std::panic::catch_unwind(|| lookup(false, false).narrow::<GetCodes>());
-    if cfg!(debug_assertions) {
-        assert!(caught.is_err(), "a debug build asserts on an undeclared code");
-        assert_eq!(PANIC_AT.take(), Some((file!().to_string(), line)));
-    } else {
-        let err = caught.expect("no assertion in release").expect_err("not found");
-        assert_eq!(*err.code(), GetCodes::InternalError);
-        assert_eq!(PANIC_AT.take(), None);
-    }
+    let err = caught.expect("no panic").expect_err("not found");
+    assert_eq!(*err.code(), GetCodes::InternalError);
 }

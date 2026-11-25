@@ -781,8 +781,8 @@ async fn a_bare_success_that_cannot_be_written_is_not_marked_ok() {
     assert_eq!(response.headers().get("x-rpc-status"), None);
 }
 
-/// A registry serde renames and `#[code]` does not: its `Display` (the
-/// identifier) and its wire name (`snake_case`) differ.
+/// A registry serde renames and `#[code]` does not: its wire name is serde's
+/// (`snake_case`), not the identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, treat::ApiErrorCode, treat::rpc::WireEnum)]
 #[serde(rename_all = "snake_case")]
 enum SnakeCode {
@@ -812,8 +812,11 @@ async fn snake_http_rename(request: Request) -> Handled {
 /// `ApiError` (a body of the wrong type, unparsable or too large).
 #[tokio::test]
 async fn every_runtime_refusal_spells_the_code_by_its_wire_name() {
-    let premise = SnakeCode::InvalidBody.to_string();
-    assert_eq!(premise, "InvalidBody", "the premise: Display differs");
+    // `Display` spells serde's name too, so a handler's `ApiError` and the
+    // runtime's own refusals carry one code.
+    assert_eq!(SnakeCode::InvalidBody.to_string(), "invalid_body");
+    let (_, json) = read(ApiError::from(SnakeCode::InvalidBody)).await;
+    assert_eq!(code(&json), Some("invalid_body"), "a handler's failure: {json}");
 
     let large = format!(r#"{{"id": 1, "name": "{}"}}"#, "x".repeat(100));
     let cases = [
@@ -845,4 +848,125 @@ async fn every_runtime_refusal_spells_the_code_by_its_wire_name() {
 
     let (_, json) = read(SnakeRt::internal_failure("boom")).await;
     assert_eq!(code(&json), Some("internal_error"));
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate)]
+struct Optional {
+    slot: Option<i64>,
+    name: Option<String>,
+}
+
+static SLOT_FIELDS: &[QueryField] = &[QueryField::int("slot"), QueryField::str("name")];
+
+/// `@http(method: ANY, path: "/maybe/{slot}", body: JSON)`
+static ANY_JSON: HttpSpec = spec(
+    HttpMethod::Any,
+    "/maybe/{slot}",
+    SLOT_FIELDS,
+    &["slot"],
+    HttpBodyKind::Json,
+);
+/// `@http(method: PUT, path: "/maybe/{slot}", body: JSON)`
+static PUT_JSON: HttpSpec = HttpSpec {
+    method: HttpMethod::Put,
+    ..ANY_JSON
+};
+
+async fn any_json(request: Request) -> Handled {
+    Ok(echo(Rt::http_input::<Optional>(request, &ANY_JSON).await?))
+}
+
+async fn put_json(request: Request) -> Handled {
+    Ok(echo(Rt::http_input::<Optional>(request, &PUT_JSON).await?))
+}
+
+/// An `ANY` route reads a request without a body from its query string; a
+/// route bound to one method still needs its JSON body.
+#[tokio::test]
+async fn an_any_route_without_a_json_body_reads_the_query_string() {
+    let router = Router::new().route("/maybe/{slot}", any(any_json));
+    let send = |method: &'static str, body: &'static str| send_to(&router, method, "/maybe/3", body);
+    let (status, json) = send_to(&router, "GET", "/maybe/3?name=q&slot=9", "").await;
+    assert_eq!(
+        (status, json),
+        (200, json!({ "slot": 3, "name": "q" })),
+        "the path wins"
+    );
+    let (status, json) = send_to(&router, "GET", "/maybe/x", "").await;
+    assert_eq!((status, code(&json)), (400, Some(INVALID)), "{json}");
+    assert_eq!(send("GET", "").await, (200, json!({ "slot": 3, "name": null })));
+    assert_eq!(send("DELETE", "").await, (200, json!({ "slot": 3, "name": null })));
+    let (status, json) = send("POST", r#"{"name": "n"}"#).await;
+    assert_eq!((status, json), (200, json!({ "slot": 3, "name": "n" })));
+    let (status, json) = send("POST", "{").await;
+    assert_eq!(
+        (status, code(&json)),
+        (400, Some(INVALID)),
+        "a body is still parsed: {json}"
+    );
+
+    let router = Router::new().route("/maybe/{slot}", put(put_json));
+    let (status, json) = send_to(&router, "PUT", "/maybe/3?name=q", "").await;
+    assert_eq!(
+        (status, code(&json)),
+        (400, Some(INVALID)),
+        "PUT needs its body: {json}"
+    );
+}
+
+async fn send_to(router: &Router, method: &str, uri: &str, body: &'static str) -> (u16, serde_json::Value) {
+    let request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .body(axum::body::Body::from(body))
+        .expect("a valid request");
+    read(router.clone().oneshot(request).await.expect("the router is infallible")).await
+}
+
+/// A handler whose operation reads no path parameter runs outside a matched
+/// route too: as a service of its own, there are none for axum to give.
+#[tokio::test]
+async fn a_handler_without_path_fields_does_not_read_the_path() {
+    use axum::handler::HandlerWithoutStateExt;
+    let request = Request::builder()
+        .uri("/find?email=a%40b.c")
+        .body(axum::body::Body::empty())
+        .expect("a valid request");
+    let response = find.into_service().oneshot(request).await.expect("infallible");
+    let (status, json) = read(response).await;
+    assert_eq!(
+        (status, json),
+        (200, json!({ "email": "a@b.c", "limit": null, "tags": [] }))
+    );
+}
+
+/// A bare failure at any `2xx` cannot be told from a success, so it answers
+/// `500`; a status outside `2xx` is kept.
+#[tokio::test]
+async fn a_bare_failure_at_any_success_status_answers_500() {
+    for status in [200, 201, 202, 204] {
+        let failed: Result<i32, _> = Err(ApiError::from(ErrorCode::NotFound).with_status(status));
+        let (answered, json) = read(Rt::respond_bare(failed)).await;
+        assert_eq!((answered, code(&json)), (500, Some("not_found")), "{status}");
+    }
+    let failed: Result<i32, _> = Err(ApiError::from(ErrorCode::NotFound).with_status(404));
+    assert_eq!(read(Rt::respond_bare(failed)).await.0, 404);
+}
+
+/// A refusal at any `2xx` gets the `@http` status, not only one at `200`:
+/// a caller reading the status line takes every `2xx` for success.
+#[tokio::test]
+async fn an_http_refusal_at_any_success_status_gets_the_http_status() {
+    for status in [200, 202] {
+        let refused: Refusal = ApiError::from(ErrorCode::Unauthenticated).with_status(status).into();
+        let session = Rt::http_session::<()>(Err(refused)).expect_err("refused");
+        assert_eq!(session.status(), StatusCode::UNAUTHORIZED, "{status}");
+
+        let refused: Refusal = ApiError::from(ErrorCode::NotFound).with_status(status).into();
+        let access = Rt::http_access(Err(refused)).expect_err("refused");
+        assert_eq!(access.status(), StatusCode::FORBIDDEN, "{status}");
+    }
+    let refused: Refusal = ApiError::from(ErrorCode::Unauthenticated).with_status(503).into();
+    let kept = Rt::http_session::<()>(Err(refused)).expect_err("refused");
+    assert_eq!(kept.status(), StatusCode::SERVICE_UNAVAILABLE);
 }

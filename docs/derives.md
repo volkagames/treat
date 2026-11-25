@@ -39,17 +39,27 @@ assert_eq!(err.to_error_message().message.as_deref(), Some("order 7 not found"))
 Generated: `Display` (the code), `From<YourEnum> for ApiError<YourEnum>`, and
 `From<YourEnum> for Result<ApiResponse<T, M>, YourEnum>`.
 
-> **Set `#[code(...)]` explicitly.** The default wire code is the variant name
+> **Set `#[code(...)]` explicitly.** Without it the wire code is the name serde
+> writes for the variant (`#[serde(rename)]`, the enum's `#[serde(rename_all)]`),
+> and without those the variant name
 > verbatim — `NotFound`, not `not_found`; a raw identifier without its prefix,
 > `r#type` as `type` — which clashes with the `snake_case`
 > codes used everywhere else in this library and in most APIs. The default exists
 > for backwards compatibility and is _not_ a recommendation: spell the wire code
 > out on every variant so it stays stable when the Rust variant is renamed.
 >
-> **Changed in 0.26:** a raw identifier used to keep its prefix (`r#type` was
-> sent as the code `r#type`). It is now `type`, the name serde writes. A
-> variant whose clients still match the old code keeps it with
-> `#[code("r#type")]`.
+> **Changed in 0.26**, both changing the code a variant without `#[code]` is
+> sent as:
+>
+> - `Display` follows serde's `rename` and `rename_all`, as
+>   `#[derive(WireEnum)]` does, so the code in an envelope is the value a JSON
+>   payload carries. Under `#[serde(rename_all = "snake_case")]`, `NotFound`
+>   used to be sent as `NotFound` and is now `not_found`.
+> - A raw identifier lost its prefix: `r#type` used to be sent as `r#type` and
+>   is now `type`, the name serde writes.
+>
+> A variant whose clients still match the old code keeps it with `#[code]`:
+> `#[code("NotFound")]`, `#[code("r#type")]`.
 
 **When to use:** your own service's error space, where you want typed codes and
 message templates.
