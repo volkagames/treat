@@ -91,6 +91,10 @@ request. Search the logs or the answers for that key to find the gaps. Any regis
 generated one also implements `RuntimeCodes` to tell the runtime which of its
 codes are `invalid_body` and `internal_error`.
 
+With the `tracked` feature, `Narrow` is also implemented for `erris::TrackedResult`,
+so a service function returning `erris::Result<T, Failure<ErrorCode>>` narrows with a
+plain `.narrow()` (no `.into_std()` first); its cause and hops are kept.
+
 ## Routes
 
 `treat::rpc::route::by_route(rows, method, path)` finds the operation the router

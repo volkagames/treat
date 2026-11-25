@@ -274,7 +274,7 @@ The `treat` facade re-exports functionality behind feature flags.
 | `rpc-client-rustls` | `rpc-client` with TLS (rustls), needed for `https` base URLs.                                  |
 | `rpc-stream`        | Server-sent events and raw bodies for the RPC server or client. Implies `rpc`.                 |
 | `nightly-provide`   | `std::error::Error::provide` support. Requires nightly.                                        |
-| `tracked`           | erris `TrackedResult` support, `ApiError` as its error. Nightly; not additive (see below).     |
+| `tracked`           | erris `TrackedResult` support, `ApiError` as its error, `Narrow` on `erris::TrackedResult`. Nightly; not additive (see below). |
 
 The crate builds on stable Rust (MSRV 1.88) unless `nightly-provide` or
 `tracked` is enabled.

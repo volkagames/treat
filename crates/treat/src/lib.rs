@@ -90,7 +90,7 @@
 //! | `rpc-stream` | server-sent events and raw byte bodies for the RPC server / client |
 //! | `rpc-status-header` | `x-rpc-status` on every envelope; with `rpc-server` on bare, raw, SSE successes too |
 //! | `nightly-provide` | `std::error::Error::provide` support (**requires nightly**) |
-//! | `tracked` | `ApiError` as the error of an erris `TrackedResult` (**requires nightly**; not additive) |
+//! | `tracked` | `ApiError` in a `TrackedResult`; `Narrow` on `erris::TrackedResult` (**nightly**, not additive) |
 
 pub use treat_core::*;
 

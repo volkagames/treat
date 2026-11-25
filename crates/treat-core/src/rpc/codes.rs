@@ -130,3 +130,23 @@ where
         Err(narrowed)
     }
 }
+
+/// `erris::Result<T, Failure<R>>` under erris's nightly `tracked` mode, where
+/// it is a [`erris::TrackedResult`] rather than a std `Result`. The type exists
+/// only there, hence treat's own `tracked` feature; and a consumer cannot write
+/// this impl itself, since both the trait and the type are foreign to it
+/// (coherence, E0117). Hands off to the std impl: the error is moved as is, so
+/// its cause and the hops its `?`s recorded survive.
+#[cfg(feature = "tracked")]
+impl<T, R> Narrow<T> for erris::TrackedResult<T, ApiError<R>>
+where
+    R: WireEnum + ApiErrorCode,
+{
+    #[track_caller]
+    fn narrow<C>(self) -> Result<T, ApiError<C>>
+    where
+        C: ApiErrorCode + WireEnum + Undeclared,
+    {
+        self.into_std().narrow()
+    }
+}

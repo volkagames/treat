@@ -28,7 +28,7 @@ poem = ["dep:poem"]
 rpc-status-header = []
 serde-path = ["dep:serde_path_to_error"]
 spantrace = ["erris/spantrace"]
-# Nightly only: implements `WrapApiError` for `erris::TrackedResult`, lets an
+# Nightly only: implements `WrapApiError` and `rpc::Narrow` for `erris::TrackedResult`, lets an
 # `ApiError` be the error of an `erris::Result<T, ApiError>`, and turns on
 # erris's `tracked` mode (not additive: it changes `erris::Result` for the whole build).
 tracked = ["erris/tracked"]
