@@ -55,3 +55,13 @@ pub async fn read(response: impl IntoResponse) -> (u16, serde_json::Value) {
 pub fn code(json: &serde_json::Value) -> Option<&str> {
     json.pointer("/errors/0/code").and_then(serde_json::Value::as_str)
 }
+
+/// The status an `@http` refusal built without one of its own answers with:
+/// `status`, or under `treat`'s `error-status-500` the `500` such a refusal
+/// already carries, which is kept (see `ResolveContext::from_parts`).
+pub const fn unset_or(status: u16) -> u16 {
+    match treat::DEFAULT_ERROR_STATUS {
+        200 => status,
+        default => default,
+    }
+}

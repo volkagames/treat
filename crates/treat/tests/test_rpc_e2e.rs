@@ -72,6 +72,7 @@ const fn field(name: &'static str, kind: QueryKind, list: bool) -> QueryField {
 /// A field of every kind, lists included: what a query string or a form body
 /// has to spell.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 struct Everything {
     s: String,
     i: i64,
@@ -160,6 +161,7 @@ static LIST_PATH_FIELDS: &[QueryField] = &[
 ];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 struct Rename {
     id: i64,
     #[validate(length(min = 1, message = "empty"))]
@@ -307,7 +309,7 @@ fn bare<T: Serialize>(value: T) -> Response {
     Rt::respond_bare(Ok::<_, Failed>(value))
 }
 
-fn enveloped<T: Serialize>(value: T) -> Response {
+fn enveloped<T: treat::ResponseData>(value: T) -> Response {
     Rt::respond(Ok::<ApiResponse<T>, Failed>(treat::success(value)))
 }
 
@@ -730,10 +732,18 @@ async fn a_missing_session_answers_401_and_a_denied_one_403() {
     let allowed = call(as_user(&client, "admin")).await;
     assert_eq!(allowed.ok(), Some(json!({ "user": "admin" })));
 
+    // Under `error-status-500` a refusal without a status of its own already
+    // carries `500`, which is kept.
+    let unset_or = |status: u16| {
+        match treat::DEFAULT_ERROR_STATUS {
+            200 => status,
+            default => default,
+        }
+    };
     let (status, _) = exchange(&client, Method::GET, "/guarded", None, "").await;
-    assert_eq!(status, 401);
+    assert_eq!(status, unset_or(401));
     let (status, json) = exchange(&as_user(&client, "u1"), Method::GET, "/guarded", None, "").await;
-    assert_eq!((status, first_code(&json)), (403, Some("forbidden")));
+    assert_eq!((status, first_code(&json)), (unset_or(403), Some("forbidden")));
 }
 
 #[tokio::test]
@@ -818,7 +828,7 @@ async fn an_operation_without_input_still_takes_a_json_body() {
     let refused: Called<String> = client.call("/rpc/ping", &NoInput).await;
     assert_eq!(api_code(&refused), Ok(ErrorCode::Unauthenticated));
     let (status, _) = exchange(&client, Method::POST, "/rpc/ping", Some("application/json"), "{}").await;
-    assert_eq!(status, 200);
+    assert_eq!(status, treat::DEFAULT_ERROR_STATUS);
 
     for (content_type, body, expected) in [
         (Some("application/json"), "", 422),
@@ -1360,8 +1370,33 @@ async fn a_bare_answer_declared_a_failure_is_read_from_errors() {
                 .into_response(),
         )
     };
-    let (client, _) = serve_router(Router::new().route("/declared", get(declared))).await;
+    // Declared a failure but carrying `data`: no answer, not a success.
+    let contradicted = || {
+        std::future::ready(
+            (
+                [
+                    ("x-rpc-status", "error"),
+                    (header::CONTENT_TYPE.as_str(), "application/json"),
+                ],
+                r#"{"data":1}"#,
+            )
+                .into_response(),
+        )
+    };
+    let router = Router::new()
+        .route("/declared", get(declared))
+        .route("/contradicted", get(contradicted));
+    let (client, _) = serve_router(router).await;
     let spec = http(HttpMethod::Get, "/declared", &[], &[], HttpBodyKind::None, false);
     let refused: Called<Value> = client.call_http(&spec, &NoInput).await;
     assert_eq!(api_code(&refused), Ok(ErrorCode::NotFound));
+
+    for envelope in [false, true] {
+        let spec = http(HttpMethod::Get, "/contradicted", &[], &[], HttpBodyKind::None, envelope);
+        let read: Called<Value> = client.call_http(&spec, &NoInput).await;
+        assert!(
+            matches!(read, Err(ClientError::Decode(_))),
+            "envelope {envelope}: {read:?}"
+        );
+    }
 }

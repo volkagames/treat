@@ -252,11 +252,11 @@ impl<R: RuntimeCodes> Runtime<R> {
 
     /// Answer with an `@http(envelope: false)` operation's result: the value
     /// itself as the JSON body, or the failure's envelope at `500` unless the
-    /// failure set a status outside `2xx`.
+    /// failure set an error or redirect status of its own.
     ///
     /// A bare success is told from a failure by its status alone, so a failure
     /// cannot go out at a success status: one the service left at `200`, or
-    /// gave another `2xx`, answers `500`. With feature
+    /// gave another `2xx` or a `1xx`, answers `500` (see [`http_status`]). With feature
     /// `rpc-status-header` a success carries `x-rpc-status: ok`, as an
     /// envelope would.
     ///

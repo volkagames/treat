@@ -95,12 +95,12 @@ pub(crate) fn read_answer<O: DeserializeOwned, C>(
     serde_json::from_slice(body).map_err(|e| ClientError::Decode(e.to_string()))
 }
 
-/// The failure carried by an answer that is the envelope where the operation
-/// sends something else — bytes or an event stream — on success.
+/// The failure carried by an answer that can only be one: the envelope where
+/// the operation sends something else — bytes or an event stream — on
+/// success, or any answer declared `x-rpc-status: error`.
 ///
 /// Read like any envelope; one that carries `data` instead of `errors` is no
 /// answer this operation gives, so it is a decode failure under a 2xx status.
-#[cfg(feature = "stream")]
 pub(crate) fn read_refusal<C>(status: StatusCode, body: &[u8]) -> ClientError<C> {
     let read = read_envelope::<serde::de::IgnoredAny, C>(status, body);
     match read {
@@ -165,13 +165,17 @@ pub(crate) async fn send<C>(request: reqwest::RequestBuilder) -> Result<reqwest:
 }
 
 /// Read the whole of `response` as [`read_answer`] does; one declared
-/// `x-rpc-status: error` is read as the envelope whatever `envelope` says,
-/// since that is how a failure travels.
+/// `x-rpc-status: error` is read as [`read_refusal`] does whatever `envelope`
+/// says: the header said the call failed, so a body carrying `data` instead of
+/// `errors[]` is no answer rather than a success.
 pub(crate) async fn receive<O: DeserializeOwned, C>(response: reqwest::Response, envelope: bool) -> ClientResult<O, C> {
     let status = response.status();
     let declared_failure = rpc_status(&response) == Some(RpcStatus::Error);
     let body = response.bytes().await.map_err(transport)?;
-    read_answer(status, &body, envelope || declared_failure)
+    if declared_failure {
+        return Err(read_refusal(status, &body));
+    }
+    read_answer(status, &body, envelope)
 }
 
 /// An outcome the `x-rpc-status` header declares.
@@ -334,7 +338,6 @@ mod tests {
         assert_eq!(enveloped.ok(), Some(7));
     }
 
-    #[cfg(feature = "stream")]
     #[test]
     fn refusal_is_the_envelope_failure() {
         let api = read_refusal::<Codes>(StatusCode::OK, br#"{"errors":[{"code":"forbidden"}]}"#);

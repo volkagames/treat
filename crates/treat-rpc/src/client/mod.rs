@@ -59,8 +59,11 @@ pub use treat_core::{ErrorMessage, ErrorSource};
 
 /// The response envelope, used for both success and failure.
 ///
-/// Envelope-level `meta` is typed as a map, so `meta["page"]` needs no cast.
-pub type ApiResponse<T> = treat_core::ApiResponse<T, serde_json::Map<String, serde_json::Value>>;
+/// Envelope-level `meta` is any JSON value, so `meta["page"]` and
+/// `meta.get("page")` need no cast. A `serde_json::Value` rather than a
+/// `serde_json::Map`: with `treat`'s `openapi` feature `meta` must have a
+/// schema, which `utoipa` gives a `Value` and not a `Map`.
+pub type ApiResponse<T> = treat_core::ApiResponse<T, serde_json::Value>;
 
 /// The input of an operation that takes none: serializes as `{}`.
 ///

@@ -206,9 +206,9 @@ body is read only when the `Content-Type`'s media type is exactly
 `application/x-www-form-urlencoded` (any case, any parameters). `respond_http`
 answers an enveloped operation as `respond` does — the service returns an
 `ApiResponse` — and a bare one as `respond_bare`: the value itself, and a
-failure at any `2xx` status at `500`, since only the status tells it from a
-success. A JSON-bodied `ANY` route called without a body, as a `GET` is, reads
-its input from the query string instead; a route without path fields does not
+failure at any `2xx` (or `1xx`) status at `500`, since only the status tells
+it from a success. A JSON-bodied `GET`, `DELETE` or `ANY` route called without a body
+(or with only whitespace) reads its input from the query string instead; a route without path fields does not
 read the path at all.
 
 The context is the project's: it implements `ResolveContext` (resolve the

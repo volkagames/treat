@@ -3,7 +3,7 @@
 
 use super::handler::WireCode;
 use super::{Ctx, QueryField, Refusal};
-use crate::{HttpBodyKind, HttpMethod, HttpSpec, Runtime, RuntimeCodes, media};
+use crate::{HttpBodyKind, HttpSpec, Runtime, RuntimeCodes, media};
 use axum::body::Bytes;
 use axum::extract::{FromRequest, FromRequestParts, RawPathParams, Request};
 use axum::http::request::Parts;
@@ -22,11 +22,13 @@ use validator::Validate;
 /// whatever the body's rejection carried (`413` for one too large). A missing
 /// session answers `401` and a denied one `403`, and the service's own failure
 /// of an operation answered bare `500`: there a `200` would read as success.
-/// A status the failure already carries outside `2xx` is kept; one inside it
-/// is replaced, since a caller reading the status line would take any `2xx`
-/// for success.
+/// A status the failure already carries is kept if it is an error (`4xx`,
+/// `5xx`) or a redirect (`3xx`: a session refusal sending a browser to sign
+/// in); one that is neither is replaced — a caller reading the status line
+/// takes any `2xx` for success, and a `1xx` is no final answer at all.
 pub fn http_status(mut response: Response, status: StatusCode) -> Response {
-    if response.status().is_success() {
+    let current = response.status();
+    if current.is_success() || current.is_informational() {
         *response.status_mut() = status;
     }
     response
@@ -86,14 +88,15 @@ impl<R: RuntimeCodes> Runtime<R> {
     ///
     /// - [`HttpBodyKind::Json`]: the body is the input object; one that does
     ///   not parse is refused with a pointer to where it went wrong. The
-    ///   query string is not read, except under [`HttpMethod::Any`] when the
-    ///   body is empty, as a `GET` sends it: then the input is read from the
-    ///   query string as for [`HttpBodyKind::None`]. Nor is the
-    ///   `Content-Type` checked, unlike an RPC body's ([`Runtime::no_input`]
-    ///   says why that matters): an endpoint
-    ///   bound to HTTP keeps whatever contract its callers already have, so
-    ///   one a cross-origin page must not reach needs its own guard, such as
-    ///   a `SameSite` session cookie.
+    ///   query string is not read, except when the body is empty (or only
+    ///   whitespace) under a method that need not carry one — `GET`, `DELETE`,
+    ///   [`HttpMethod::Any`](crate::HttpMethod::Any): then the input is read
+    ///   from the query string as for [`HttpBodyKind::None`]. `POST`, `PUT`
+    ///   and `PATCH` need the body. Nor is the `Content-Type` checked, unlike
+    ///   an RPC body's ([`Runtime::no_input`] says why that matters): an
+    ///   endpoint bound to HTTP keeps whatever contract its callers already
+    ///   have, so one a cross-origin page must not reach needs its own guard,
+    ///   such as a `SameSite` session cookie.
     /// - [`HttpBodyKind::Form`]: the query string, and over it a form body,
     ///   which wins per field. A body is read only when its `Content-Type`'s
     ///   media type is `application/x-www-form-urlencoded` (in any case, with
@@ -112,10 +115,12 @@ impl<R: RuntimeCodes> Runtime<R> {
             // `http_input` answers it `400`; one that could not be read keeps
             // the status of axum's rejection (`413`).
             let bytes = Self::read_body(request).await?;
-            // An `ANY` route called without a body — a `GET` among its callers
-            // has none to send — reads its query string instead, as a route
-            // without a body does, rather than dropping what the URL carries.
-            if spec.method == HttpMethod::Any && bytes.is_empty() {
+            // A route whose method need not carry a body (`GET`, `DELETE`,
+            // `ANY`) called without one reads its query string instead, as a
+            // route without a body does, rather than dropping what the URL
+            // carries. Whitespace is no body: it is no JSON either.
+            let bodiless = HttpBodyKind::default_for(spec.method) == HttpBodyKind::None;
+            if bodiless && bytes.trim_ascii().is_empty() {
                 let pairs = Self::url_pairs(query.as_bytes())?;
                 let mut object = Self::object_from_pairs(&pairs, spec.fields)?;
                 object.extend(path_values);

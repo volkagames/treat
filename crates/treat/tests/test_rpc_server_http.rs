@@ -9,13 +9,13 @@ use axum::Router;
 use axum::extract::{DefaultBodyLimit, Request};
 use axum::http::StatusCode;
 use axum::http::request::Parts;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use axum::routing::{any, get, post, put};
-use rpc_server::{ErrorCode, FIND_FIELDS, INVALID, Rt, code, read};
+use rpc_server::{ErrorCode, FIND_FIELDS, INVALID, Rt, code, read, unset_or};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tower::ServiceExt;
-use treat::rpc::server::{Ctx, QueryField, QueryKind, Refusal, ResolveContext, http_status};
+use treat::rpc::server::{Ctx, QueryField, QueryKind, Refusal, ResolveContext};
 use treat::rpc::{HttpBodyKind, HttpMethod, HttpSpec};
 use treat::{ApiError, ApiResponse};
 use validator::Validate;
@@ -59,6 +59,7 @@ static INFO_FIELDS: &[QueryField] = &[
 ];
 
 #[derive(Debug, Serialize, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 struct Rename {
     id: i64,
     #[validate(length(min = 1, message = "empty"))]
@@ -194,8 +195,8 @@ impl ResolveContext for Session {
     async fn from_parts(parts: &mut Parts) -> Result<Self, Refusal> {
         let header = |name| parts.headers.get(name).and_then(|value| value.to_str().ok());
         if header("x-store") == Some("down") {
-            let unavailable = ApiError::from(ErrorCode::InternalError).into_response();
-            return Err(http_status(unavailable, StatusCode::SERVICE_UNAVAILABLE).into());
+            let unavailable = ApiError::from(ErrorCode::InternalError).with_status(503);
+            return Err(unavailable.into());
         }
         match header("x-user") {
             Some(user) => Ok(Self { user: user.to_string() }),
@@ -502,14 +503,14 @@ async fn a_form_that_cannot_be_read_keeps_its_status() {
 #[tokio::test]
 async fn session_and_access_refusals_carry_a_status() {
     let (status, json) = call("GET", "/whoami", &[], "").await;
-    assert_eq!(status, 401);
+    assert_eq!(status, unset_or(401));
     assert_eq!(code(&json), Some("unauthenticated"));
 
     let (status, json) = call("GET", "/whoami", &[("x-store", "down")], "").await;
     assert_eq!(status, 503, "a refusal with its own status keeps it: {json}");
 
     let (status, json) = call("GET", "/whoami", &[("x-user", "u1")], "").await;
-    assert_eq!(status, 403);
+    assert_eq!(status, unset_or(403));
     assert_eq!(code(&json), Some("not_found"));
 
     let (status, json) = call("GET", "/whoami", &[("x-user", "admin")], "").await;
@@ -521,12 +522,13 @@ const JSON: (&str, &str) = ("content-type", "application/json");
 #[tokio::test]
 async fn an_rpc_handler_answers_refusals_with_the_envelope_s_status() {
     let (status, json) = call("POST", "/rpc/whoami", &[JSON], "{}").await;
-    assert_eq!((status, code(&json)), (200, Some("unauthenticated")));
+    let envelope = treat::DEFAULT_ERROR_STATUS;
+    assert_eq!((status, code(&json)), (envelope, Some("unauthenticated")));
 
     let (status, json) = call("POST", "/rpc/whoami", &[JSON, ("x-user", "u1")], "{}").await;
     assert_eq!(
         (status, code(&json)),
-        (200, Some("not_found")),
+        (envelope, Some("not_found")),
         "the guard runs before the body is read"
     );
 
@@ -954,10 +956,11 @@ async fn a_bare_failure_at_any_success_status_answers_500() {
 }
 
 /// A refusal at any `2xx` gets the `@http` status, not only one at `200`:
-/// a caller reading the status line takes every `2xx` for success.
+/// a caller reading the status line takes every `2xx` for success. A `1xx`
+/// is no final answer and is replaced too; a redirect is kept.
 #[tokio::test]
 async fn an_http_refusal_at_any_success_status_gets_the_http_status() {
-    for status in [200, 202] {
+    for status in [200, 202, 100] {
         let refused: Refusal = ApiError::from(ErrorCode::Unauthenticated).with_status(status).into();
         let session = Rt::http_session::<()>(Err(refused)).expect_err("refused");
         assert_eq!(session.status(), StatusCode::UNAUTHORIZED, "{status}");
@@ -966,7 +969,64 @@ async fn an_http_refusal_at_any_success_status_gets_the_http_status() {
         let access = Rt::http_access(Err(refused)).expect_err("refused");
         assert_eq!(access.status(), StatusCode::FORBIDDEN, "{status}");
     }
-    let refused: Refusal = ApiError::from(ErrorCode::Unauthenticated).with_status(503).into();
-    let kept = Rt::http_session::<()>(Err(refused)).expect_err("refused");
-    assert_eq!(kept.status(), StatusCode::SERVICE_UNAVAILABLE);
+    for status in [503, 302] {
+        let refused: Refusal = ApiError::from(ErrorCode::Unauthenticated).with_status(status).into();
+        let kept = Rt::http_session::<()>(Err(refused)).expect_err("refused");
+        assert_eq!(kept.status().as_u16(), status);
+    }
+
+    let failed: Result<i32, _> = Err(ApiError::from(ErrorCode::NotFound).with_status(100));
+    assert_eq!(read(Rt::respond_bare(failed)).await.0, 500, "a bare failure at 1xx");
+}
+
+/// `@http(method: GET, path: "/search", body: JSON)` and the same under
+/// `DELETE` and `POST`.
+static SEARCH_GET: HttpSpec = spec(HttpMethod::Get, "/search", SLOT_FIELDS, &[], HttpBodyKind::Json);
+static SEARCH_DELETE: HttpSpec = HttpSpec {
+    method: HttpMethod::Delete,
+    ..SEARCH_GET
+};
+static SEARCH_POST: HttpSpec = HttpSpec {
+    method: HttpMethod::Post,
+    ..SEARCH_GET
+};
+
+async fn search_get(request: Request) -> Handled {
+    Ok(echo(Rt::http_input::<Optional>(request, &SEARCH_GET).await?))
+}
+
+async fn search_delete(request: Request) -> Handled {
+    Ok(echo(Rt::http_input::<Optional>(request, &SEARCH_DELETE).await?))
+}
+
+async fn search_post(request: Request) -> Handled {
+    Ok(echo(Rt::http_input::<Optional>(request, &SEARCH_POST).await?))
+}
+
+/// A JSON-bodied route under a method that need not carry a body reads the
+/// query string when there is none — or only whitespace; one that must carry
+/// a body still refuses an empty one.
+#[tokio::test]
+async fn a_json_route_whose_method_needs_no_body_reads_the_query_without_one() {
+    let router = Router::new().route("/search", get(search_get).delete(search_delete).post(search_post));
+    for method in ["GET", "DELETE"] {
+        for body in ["", " \r\n\t"] {
+            let (status, json) = send_to(&router, method, "/search?name=q", body).await;
+            assert_eq!(
+                (status, json),
+                (200, json!({ "slot": null, "name": "q" })),
+                "{method} {body:?}"
+            );
+        }
+        let (status, json) = send_to(&router, method, "/search?name=q", r#"{"name": "b"}"#).await;
+        assert_eq!(
+            (status, json),
+            (200, json!({ "slot": null, "name": "b" })),
+            "{method}: the body wins"
+        );
+    }
+    for body in ["", "  "] {
+        let (status, json) = send_to(&router, "POST", "/search?name=q", body).await;
+        assert_eq!((status, code(&json)), (400, Some(INVALID)), "POST {body:?}: {json}");
+    }
 }
