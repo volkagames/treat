@@ -15,7 +15,7 @@ version.workspace = true
 telemetry = ["dep:opentelemetry", "dep:tracing-opentelemetry"]
 
 [dependencies]
-actix-web = { version = "4.15", default-features = false, features = ["macros", "compress-brotli", "compress-gzip", "compress-zstd", "cookies", "unicode", "compat", "ws"] }
+actix-web = { version = "4.17", default-features = false, features = ["macros", "compress-brotli", "compress-gzip", "compress-zstd", "cookies", "unicode", "compat", "ws"] }
 opentelemetry = { version = "0.33", optional = true }
 pin-project = "1"
 tracing = { version = "0.1", features = ["log"] }
