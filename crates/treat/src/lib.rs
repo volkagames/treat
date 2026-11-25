@@ -61,24 +61,30 @@
 //! * `docs/frameworks.md` — actix-web, axum, poem and the observability middleware.
 //! * `docs/cookbook.md` — everyday recipes.
 //! * `docs/troubleshooting.md` — common errors and fixes.
+//! * `docs/rpc.md` — `treat::rpc`, the runtime generated RPC code links against.
 //!
 //! # Feature flags
 //!
 //! | Feature | Enables |
 //! |---------|---------|
-//! | `derive` *(default)* | the `ApiError` / `ApiErrorCode` / `FromErrorMessage` macros |
+//! | `derive` *(default)* | the `ApiError` / `ApiErrorCode` / `FromErrorMessage` / `rpc::WireEnum` macros |
 //! | `actix` | actix-web `Responder`/`ResponseError` + middleware + telemetry + [`response_get_api_error_actix`] |
 //! | `actix-middleware` / `actix-telemetry` | the middleware / OpenTelemetry parts on their own |
 //! | `axum` | axum `IntoResponse` + [`response_get_api_error`] |
 //! | `poem` | poem `IntoResponse` + `ResponseError` + [`response_get_api_error_poem`] |
 //! | `tower-middleware` / `tower-telemetry` | tower request-id + root span (+ OpenTelemetry) for axum/poem |
 //! | `serde-path` | `deserialize_body`: JSON parse errors carry a field pointer |
-//! | `validator` | `validate_api` / `Validated<T>`: field errors carry pointers |
+//! | `validator` | `validate_api` / `Validated<T>`: field errors carry pointers; `rpc::validate::matches_pattern` |
 //! | `validator-extract` | `ApiJson<T>` / `ApiValidated<T>` request extractors (needs `axum`/`actix`) |
 //! | `openapi` | `utoipa::ToSchema` on the envelope + response data |
 //! | `meta-slots` | ready-made typed `meta` payloads (`Pagination`, `RateLimit`) |
 //! | `spantrace` / `backtrace` | capture a span-/back-trace on every error; span traces also need `ErrorLayer` |
 //! | `verbose-error` | always serialize the full cause chain |
+//! | `rpc` | `rpc::Runtime` for generated RPC code; the framework-free [`rpc`] items need no feature |
+//! | `rpc-server` / `rpc-client` | the axum server / reqwest client runtime in [`rpc`] (imply `rpc`) |
+//! | `rpc-client-rustls` | `rpc-client` with `reqwest`'s `rustls` (aws-lc-rs, platform verifier) for `https` |
+//! | `rpc-stream` | server-sent events and raw byte bodies for the RPC server / client |
+//! | `rpc-status-header` | `x-rpc-status` on every envelope; with `rpc-server` on bare, raw, SSE successes too |
 //! | `nightly-provide` | `std::error::Error::provide` support (**requires nightly**) |
 
 pub use treat_core::*;
@@ -90,6 +96,26 @@ pub mod prelude {
     // (macro namespace), as in the original single-crate layout.
     #[cfg(feature = "derive")]
     pub use treat_derive::*;
+}
+
+/// Runtime for generated RPC services (see `docs/rpc.md`).
+///
+/// One namespace over the crates that define its items: the framework-free
+/// traits and helpers of `treat-core` (always here), the `WireEnum` derive
+/// (feature `derive`), and with `rpc` / `rpc-server` / `rpc-client` /
+/// `rpc-stream` the axum and reqwest runtime of `treat-rpc`. So
+/// `treat::rpc::X` names an item wherever it is defined, and
+/// `#[derive(treat::rpc::WireEnum)]` sits next to the trait it implements.
+pub mod rpc {
+    // One glob per build: `treat_rpc` re-exports `treat_core::rpc::*` itself,
+    // so with `rpc` it alone covers both crates, and without it the core's
+    // items are all there is.
+    #[cfg(not(feature = "rpc"))]
+    pub use treat_core::rpc::*;
+    #[cfg(feature = "derive")]
+    pub use treat_derive::WireEnum;
+    #[cfg(feature = "rpc")]
+    pub use treat_rpc::*;
 }
 
 #[cfg(feature = "actix-middleware")]

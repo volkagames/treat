@@ -17,6 +17,7 @@ solve real problems in an application. For the API reference see
 5. [Framework integration](frameworks.md) — actix-web, axum, poem, request extractors, and observability middleware.
 6. [Cookbook](cookbook.md) — tricks & problem → solution recipes.
 7. [Troubleshooting](troubleshooting.md) — common errors and how to fix them.
+8. [RPC runtime](rpc.md) — `treat::rpc`, the runtime generated RPC code links against.
 
 ## The one-minute version
 

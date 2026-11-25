@@ -256,6 +256,11 @@ The `treat` facade re-exports functionality behind feature flags.
 | `verbose-error`     | Serialize full cause chains to clients.                             |
 | `error-status-500`  | Default an error with no explicit status to `500` instead of `200`. |
 | `rpc-status-header` | Add an `X-RPC-Status: ok` / `error` header to every response.       |
+| `rpc`               | `treat::rpc::Runtime` for generated RPC code (docs/rpc.md).         |
+| `rpc-server`        | axum server runtime for generated RPC code. Implies `rpc`.          |
+| `rpc-client`        | reqwest client runtime for generated RPC code. Implies `rpc`.       |
+| `rpc-client-rustls` | `rpc-client` with TLS (rustls), needed for `https` base URLs.       |
+| `rpc-stream`        | Server-sent events and raw bodies for the RPC server or client.     |
 | `nightly-provide`   | `std::error::Error::provide` support. Requires nightly.             |
 | `tracked`           | erris `TrackedResult` support, `ApiError` as its error. Nightly.    |
 

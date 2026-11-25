@@ -1,6 +1,7 @@
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::Data::Enum;
+use syn::ext::IdentExt;
 use syn::{DataEnum, DeriveInput, Fields};
 
 pub fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
@@ -14,6 +15,11 @@ pub fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
     };
 
     let treat = crate::runtime_path();
+    // The conversion's argument and the formatted message are bound at
+    // `mixed_site`, so a variant field named `value` or `message` (bound by the
+    // arm's pattern for `#[message]` interpolation) cannot capture them.
+    let value = syn::Ident::new("value", Span::mixed_site());
+    let message_var = syn::Ident::new("message", Span::mixed_site());
 
     let mut from_api_err_impl: Vec<TokenStream> = Vec::with_capacity(variants.len());
     // Collected unconditionally, but only emitted when at least one variant
@@ -32,22 +38,22 @@ pub fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
                 match variant.fields {
                     Fields::Unit => {
                         quote! {
-                            #enum_name::#ident => #treat::error(value).with_message(#message) #with_status,
+                            #enum_name::#ident => #treat::error(#value).with_message(#message) #with_status,
                         }
                     }
                     Fields::Named(_) => {
                         quote! {
                             #enum_name::#ident {#fields_defs ..} => {
-                                let message = format!(#message);
-                                #treat::error(value).with_message(message) #with_status
+                                let #message_var = ::std::format!(#message);
+                                #treat::error(#value).with_message(#message_var) #with_status
                             },
                         }
                     }
                     Fields::Unnamed(_) => {
                         quote! {
                             #enum_name::#ident(#fields_defs ..) => {
-                                let message = format!(#message);
-                                #treat::error(value).with_message(message) #with_status
+                                let #message_var = ::std::format!(#message);
+                                #treat::error(#value).with_message(#message_var) #with_status
                             },
                         }
                     }
@@ -57,17 +63,17 @@ pub fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
                 match variant.fields {
                     Fields::Unit => {
                         quote! {
-                            #enum_name::#ident => #treat::error(value) #with_status,
+                            #enum_name::#ident => #treat::error(#value) #with_status,
                         }
                     }
                     Fields::Named(_) => {
                         quote! {
-                            #enum_name::#ident { .. } => #treat::error(value) #with_status,
+                            #enum_name::#ident { .. } => #treat::error(#value) #with_status,
                         }
                     }
                     Fields::Unnamed(_) => {
                         quote! {
-                            #enum_name::#ident( ..) => #treat::error(value) #with_status,
+                            #enum_name::#ident( ..) => #treat::error(#value) #with_status,
                         }
                     }
                 }
@@ -86,21 +92,24 @@ pub fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
     let mut display_impl: Vec<TokenStream> = Vec::with_capacity(variants.len());
     for variant in variants {
         let ident = &variant.ident;
-        let code = crate::fetch_code_from_attrs(&variant.attrs)?.unwrap_or_else(|| ident.to_string());
+        // A raw identifier is written unprefixed (`r#type` is `type`), as serde
+        // and `WireEnum` spell it, so the three agree on a variant with no
+        // `#[code]`.
+        let code = crate::fetch_code_from_attrs(&variant.attrs)?.unwrap_or_else(|| ident.unraw().to_string());
         display_impl.push(match variant.fields {
             Fields::Unit => {
                 quote! {
-                    #enum_name::#ident =>  write!(f, "{}", #code),
+                    #enum_name::#ident => ::core::write!(f, "{}", #code),
                 }
             }
             Fields::Named(_) => {
                 quote! {
-                    #enum_name::#ident { .. } =>  write!(f, "{}", #code),
+                    #enum_name::#ident { .. } => ::core::write!(f, "{}", #code),
                 }
             }
             Fields::Unnamed(_) => {
                 quote! {
-                    #enum_name::#ident( .. ) =>  write!(f, "{}", #code),
+                    #enum_name::#ident( .. ) => ::core::write!(f, "{}", #code),
                 }
             }
         });
@@ -109,7 +118,7 @@ pub fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
     let status_ts = has_status.then(|| {
         quote! {
             impl #treat::ApiErrorStatus for #enum_name {
-                fn status_code(&self) -> u16 {
+                fn status_code(&self) -> ::core::primitive::u16 {
                     match self {
                         #(#status_impl)*
                     }
@@ -119,27 +128,29 @@ pub fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
     });
 
     let ts = quote! {
-        impl From<#enum_name> for #treat::ApiError<#enum_name> {
+        impl ::core::convert::From<#enum_name> for #treat::ApiError<#enum_name> {
             #[track_caller]
-            fn from(value: #enum_name) -> Self {
-                match &value {
+            fn from(#value: #enum_name) -> Self {
+                match &#value {
                     #(#from_api_err_impl)*
                 }
             }
         }
 
-        impl std::fmt::Display for #enum_name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        impl ::core::fmt::Display for #enum_name {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                 match self {
                     #(#display_impl)*
                 }
             }
         }
 
-        impl<T: #treat::ResponseData, M: #treat::ResponseData> From<#enum_name>
-            for std::result::Result<#treat::ApiResponse<T, M>, #enum_name> {
+        // The parameters are named apart from anything a user would call an
+        // enum, so an enum named `T` or `M` is not captured by them.
+        impl<__TreatData: #treat::ResponseData, __TreatMeta: #treat::ResponseData> ::core::convert::From<#enum_name>
+            for ::core::result::Result<#treat::ApiResponse<__TreatData, __TreatMeta>, #enum_name> {
             fn from(code: #enum_name) -> Self {
-                Self::Err(code.into())
+                ::core::result::Result::Err(code)
             }
         }
 

@@ -5,6 +5,7 @@ use quote::quote;
 mod api_error;
 mod api_error_code;
 mod from_error_message;
+mod wire_enum;
 
 use from_error_message::impl_from_error_message;
 
@@ -108,8 +109,9 @@ pub fn derive_api_error(input: TokenStream) -> TokenStream {
 
 /// Turn an enum into a **typed error code** usable as `ApiError<YourEnum>`.
 ///
-/// Generates `Display` (the wire code — the variant name by default, overridable
-/// with `#[code("...")]`) plus `From<YourEnum> for ApiError<YourEnum>`.
+/// Generates `Display` (the wire code — the variant name by default, a raw
+/// identifier unprefixed, overridable with `#[code("...")]`) plus
+/// `From<YourEnum> for ApiError<YourEnum>`.
 /// `#[message("...")]` is a format string interpolated over the variant's
 /// fields; tuple fields are named `arg_0`, `arg_1`, ...
 ///
@@ -144,6 +146,56 @@ pub fn derive_api_error(input: TokenStream) -> TokenStream {
 pub fn derive_api_error_code(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input);
     api_error_code::derive(&input)
+        .unwrap_or_else(|err| err.to_compile_error())
+        .into()
+}
+
+/// Give an enum of unit variants its wire names: `treat::rpc::WireEnum`.
+///
+/// Generates `ALL` (every variant, in declaration order), `from_name` and
+/// `as_str`. The trait requires `Copy`, so derive that too. A variant's wire
+/// name is, in order:
+///
+/// 1. `#[code("...")]` — the attribute `ApiErrorCode` already reads for
+///    `Display`, so one attribute serves both derives;
+/// 2. the name serde writes: `#[serde(rename = "...")]`, else the enum's
+///    `#[serde(rename_all = "...")]` applied to the identifier;
+/// 3. the identifier, a raw one unprefixed (`r#type` is `type`), as serde
+///    writes it.
+///
+/// When `#[code]` and serde both name the variant they must agree — the build
+/// fails otherwise, since the value would read one way in an error envelope and
+/// another in a JSON payload. Two variants with one wire name fail too, and so
+/// does a variant serde would write and read under different names
+/// (`serialize` / `deserialize` halves of `rename` or `rename_all` that
+/// differ, where the variant does not spell its own name).
+///
+/// Only those keys are read. `#[serde(alias)]`, `#[serde(other)]` and
+/// `#[serde(skip_*)]` are not mirrored: `from_name` accepts exactly the wire
+/// names, and `ALL` lists every variant, skipped or not. `ApiErrorCode`'s
+/// `Display` reads `#[code]` and the identifier only, never serde — so the
+/// three writers agree for certain where every variant whose serde name is not
+/// its identifier spells `#[code]`.
+///
+/// Mark one variant `#[undeclared]` to also implement `treat::rpc::Undeclared`:
+/// the value `Narrow::narrow` reports a code the set does not declare as.
+///
+/// ```ignore
+/// use treat::prelude::*;
+///
+/// #[derive(Debug, Clone, Copy, PartialEq, ApiErrorCode, treat::rpc::WireEnum)]
+/// enum GetCodes {
+///     #[code("things::gone")]
+///     ThingsGone,
+///     #[code("internal_error")]
+///     #[undeclared]
+///     InternalError,
+/// }
+/// ```
+#[proc_macro_derive(WireEnum, attributes(code, undeclared))]
+pub fn derive_wire_enum(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input);
+    wire_enum::derive(&input)
         .unwrap_or_else(|err| err.to_compile_error())
         .into()
 }

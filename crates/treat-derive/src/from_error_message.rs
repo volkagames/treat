@@ -62,7 +62,7 @@ pub fn impl_from_error_message(input: &DeriveInput) -> syn::Result<TokenStream2>
     let treat = crate::runtime_path();
 
     Ok(quote! {
-        impl From<#treat::ErrorMessage> for #enum_name {
+        impl ::core::convert::From<#treat::ErrorMessage> for #enum_name {
             #[track_caller]
             fn from(err: #treat::ErrorMessage) -> Self {
                 match err.code.as_str() {
@@ -71,7 +71,7 @@ pub fn impl_from_error_message(input: &DeriveInput) -> syn::Result<TokenStream2>
             }
         }
 
-        impl From<&#treat::ErrorMessage> for #enum_name {
+        impl ::core::convert::From<&#treat::ErrorMessage> for #enum_name {
             #[track_caller]
             fn from(err: &#treat::ErrorMessage) -> Self {
                 match err.code.as_str() {
@@ -80,18 +80,18 @@ pub fn impl_from_error_message(input: &DeriveInput) -> syn::Result<TokenStream2>
             }
         }
 
-        impl From<#treat::ApiError<&'static str>> for #enum_name {
+        impl ::core::convert::From<#treat::ApiError<&'static ::core::primitive::str>> for #enum_name {
             #[track_caller]
-            fn from(err: #treat::ApiError) -> Self {
+            fn from(err: #treat::ApiError<&'static ::core::primitive::str>) -> Self {
                 match *err.code() {
                     #arms
                 }
             }
         }
 
-        impl From<&#treat::ApiError<&'static str>> for #enum_name {
+        impl ::core::convert::From<&#treat::ApiError<&'static ::core::primitive::str>> for #enum_name {
             #[track_caller]
-            fn from(err: &#treat::ApiError) -> Self {
+            fn from(err: &#treat::ApiError<&'static ::core::primitive::str>) -> Self {
                 match *err.code() {
                     #arms
                 }
@@ -105,7 +105,7 @@ pub fn impl_from_error_message(input: &DeriveInput) -> syn::Result<TokenStream2>
 /// `Variant(ErrorMessage)` or a single-field struct `Variant { field: ErrorMessage }`.
 fn build_construct(enum_name: &syn::Ident, variant: &Variant) -> syn::Result<TokenStream2> {
     let ident = &variant.ident;
-    let value = quote! { err.to_error_message().into() };
+    let value = quote! { ::core::convert::Into::into(err.to_error_message()) };
     match &variant.fields {
         Fields::Unnamed(fields) => {
             if fields.unnamed.len() != 1 {

@@ -28,7 +28,17 @@ meta-slots = ["treat-core/meta-slots"]
 nightly-provide = ["treat-core/nightly-provide"]
 openapi = ["treat-core/openapi"]
 poem = ["treat-core/poem"]
-rpc-status-header = ["treat-core/rpc-status-header"]
+# The RPC runtime for generated services, as `treat::rpc`; the framework-free
+# part (`WireEnum`, `Narrow`, `route`, ...) is there without any of these.
+rpc = ["dep:treat-rpc"]
+rpc-client = ["rpc", "treat-rpc/client"]
+# `https` for the RPC client: `reqwest`'s `rustls` feature. Without it (or a TLS
+# feature the application turns on in its own `reqwest`) an `https` URL fails
+# when the request is sent.
+rpc-client-rustls = ["rpc-client", "treat-rpc/rustls"]
+rpc-server = ["rpc", "treat-rpc/server"]
+rpc-status-header = ["treat-core/rpc-status-header", "treat-rpc?/rpc-status-header"]
+rpc-stream = ["rpc", "treat-rpc/stream"]
 serde-path = ["treat-core/serde-path"]
 spantrace = ["treat-core/spantrace"]
 tower-middleware = ["dep:treat-tower"]
@@ -42,6 +52,7 @@ verbose-error = ["treat-core/verbose-error"]
 treat-actix = { workspace = true, optional = true }
 treat-core = { workspace = true }
 treat-derive = { workspace = true, optional = true }
+treat-rpc = { workspace = true, optional = true }
 treat-tower = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -54,7 +65,9 @@ poem = "3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-tokio = { version = "1", features = ["macros", "rt"] }
+# `test-util` for the paused clock a keep-alive test runs on.
+tokio = { version = "1", features = ["macros", "net", "rt", "sync", "test-util", "time"] }
+tower = { version = "0.5", features = ["util"] }
 tracing = { version = "0.1", features = [
     "std",
     "attributes",

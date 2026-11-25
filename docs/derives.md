@@ -3,6 +3,11 @@
 Three derives (behind the default `derive` feature) remove the boilerplate of
 mapping enums to and from the wire format.
 
+A fourth, `#[derive(treat::rpc::WireEnum)]`, gives a `Copy` enum of unit
+variants its wire names for the RPC runtime — `#[code]`, else serde's name,
+else the identifier — and refuses an enum where `#[code]` and serde disagree;
+see [rpc.md](rpc.md#codes-by-wire-name).
+
 ## `ApiErrorCode` — typed error codes
 
 Turn an enum into a code usable as `ApiError<YourEnum>`. You get exhaustiveness
@@ -35,10 +40,16 @@ Generated: `Display` (the code), `From<YourEnum> for ApiError<YourEnum>`, and
 `From<YourEnum> for Result<ApiResponse<T, M>, YourEnum>`.
 
 > **Set `#[code(...)]` explicitly.** The default wire code is the variant name
-> verbatim — `NotFound`, not `not_found` — which clashes with the `snake_case`
+> verbatim — `NotFound`, not `not_found`; a raw identifier without its prefix,
+> `r#type` as `type` — which clashes with the `snake_case`
 > codes used everywhere else in this library and in most APIs. The default exists
 > for backwards compatibility and is _not_ a recommendation: spell the wire code
 > out on every variant so it stays stable when the Rust variant is renamed.
+>
+> **Changed in 0.26:** a raw identifier used to keep its prefix (`r#type` was
+> sent as the code `r#type`). It is now `type`, the name serde writes. A
+> variant whose clients still match the old code keeps it with
+> `#[code("r#type")]`.
 
 **When to use:** your own service's error space, where you want typed codes and
 message templates.

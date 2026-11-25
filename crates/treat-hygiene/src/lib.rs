@@ -83,5 +83,150 @@ mod crate_name_hygiene {
             let _: treat_core::ApiError<Code> = Code::AlreadyPaid.into();
             let _: Client = treat_core::error("not_found").into();
         }
+
+        #[derive(Clone, Copy, treat_derive::WireEnum)]
+        enum Wire {
+            #[code("not_found")]
+            NotFound,
+            #[undeclared]
+            InternalError,
+        }
+
+        fn _assert_wire_impls() {
+            let _: Option<Wire> = <Wire as treat_core::rpc::WireEnum>::from_name("not_found");
+            let _: Wire = <Wire as treat_core::rpc::Undeclared>::UNDECLARED;
+        }
+    }
+}
+
+// Exercises the `WireEnum` derive without the prelude in scope: the generated
+// impls must name `rpc::WireEnum` / `rpc::Undeclared` through the resolved
+// runtime path, and `Option` through `::core`.
+#[derive(Clone, Copy, Debug, treat::rpc::WireEnum)]
+enum WireCode {
+    #[code("things::gone")]
+    ThingsGone,
+    #[code("internal_error")]
+    #[undeclared]
+    InternalError,
+}
+
+fn _assert_wire_impls() {
+    use treat::rpc::{Undeclared, WireEnum};
+    let _: Option<WireCode> = WireCode::from_name("things::gone");
+    let _: &'static str = WireCode::ThingsGone.as_str();
+    let _: &'static [WireCode] = WireCode::ALL;
+    let _: WireCode = WireCode::UNDECLARED;
+}
+
+/// Every derive expanded next to local items that shadow the std prelude, the
+/// primitive types the generated signatures name, the `format!` / `write!`
+/// macros and the `std` crate itself. The generated code must reach each of
+/// them through an absolute `::core` / `::std` path, so none of these local
+/// names can capture it.
+#[allow(non_camel_case_types)]
+mod shadowed_names {
+    use treat::{ApiErrorCode, ErrorMessage, FromErrorMessage};
+
+    struct From;
+    struct Into;
+    struct ToString;
+    struct Option;
+    struct Some;
+    struct None;
+    struct Result;
+    struct Ok;
+    struct Err;
+    struct String;
+    struct Vec;
+    struct Box;
+    struct Default;
+    struct Display;
+    struct Formatter;
+    struct u16;
+    struct str;
+    mod std {}
+    mod fmt {}
+    #[allow(unused_macros)]
+    macro_rules! format {
+        ($($tt:tt)*) => {
+            compile_error!("generated code must not call a local `format!`")
+        };
+    }
+    #[allow(unused_macros)]
+    macro_rules! write {
+        ($($tt:tt)*) => {
+            compile_error!("generated code must not call a local `write!`")
+        };
+    }
+
+    #[derive(Clone, Debug, ApiErrorCode)]
+    enum OrderCode {
+        // A field named like the conversion's own argument: the generated
+        // `From` must not let the variant's binding capture it.
+        #[message("order {id} not found ({value})")]
+        #[status(404)]
+        NotFound { id: u64, value: u64 },
+        #[message("bad {arg_0}")]
+        Bad(u64),
+        #[code("order.already_paid")]
+        AlreadyPaid,
+    }
+
+    #[derive(Debug, thiserror::Error, treat::ApiError)]
+    enum ServiceError {
+        #[error("forbidden")]
+        #[code("forbidden")]
+        #[status(403)]
+        Forbidden,
+
+        #[catch_all]
+        #[error("internal")]
+        #[code("internal")]
+        Internal(#[source] treat::erris::Report),
+    }
+
+    #[derive(Debug, FromErrorMessage)]
+    enum ClientError {
+        #[code("not_found")]
+        NotFound(ErrorMessage),
+        #[code("_")]
+        Other { message: ErrorMessage },
+    }
+
+    #[derive(Clone, Copy, Debug, treat::rpc::WireEnum)]
+    enum WireCode {
+        #[code("things::gone")]
+        ThingsGone,
+        #[undeclared]
+        InternalError,
+    }
+
+    // An enum named like the generic parameters a generated impl declares.
+    #[derive(Clone, Debug, ApiErrorCode)]
+    enum T {
+        Gone,
+    }
+
+    #[derive(Clone, Debug, ApiErrorCode)]
+    enum M {
+        Gone,
+    }
+
+    fn _assert_impls() {
+        use treat::rpc::{Undeclared, WireEnum};
+        let _: treat::ApiError<OrderCode> = ::core::convert::Into::into(OrderCode::NotFound { id: 1, value: 2 });
+        let _: treat::ApiError<OrderCode> = ::core::convert::Into::into(OrderCode::Bad(3));
+        let _: ::core::result::Result<treat::ApiResponse<(), ()>, OrderCode> =
+            ::core::convert::Into::into(OrderCode::AlreadyPaid);
+        let _: ::core::primitive::u16 = treat::ApiErrorStatus::status_code(&OrderCode::AlreadyPaid);
+        let _: treat::ApiError = ::core::convert::Into::into(ServiceError::Forbidden);
+        let _: ServiceError = ::core::convert::Into::into(treat::erris::report!("boom"));
+        let _: ClientError = ::core::convert::Into::into(treat::error("not_found"));
+        let _: ::core::option::Option<WireCode> = WireCode::from_name("things::gone");
+        let _: &'static ::core::primitive::str = WireCode::ThingsGone.as_str();
+        let _: WireCode = WireCode::UNDECLARED;
+        let _: ::core::result::Result<treat::ApiResponse<(), ()>, T> = ::core::convert::Into::into(T::Gone);
+        let _: ::core::result::Result<treat::ApiResponse<(), ()>, M> = ::core::convert::Into::into(M::Gone);
     }
 }

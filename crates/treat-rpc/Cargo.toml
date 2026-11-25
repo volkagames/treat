@@ -1,0 +1,69 @@
+[package]
+authors.workspace = true
+categories.workspace = true
+description = "Runtime for generated RPC services on treat: axum server and reqwest client helpers; use the treat crate's rpc-* features instead"
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+name = "treat-rpc"
+repository.workspace = true
+resolver = "3"
+rust-version.workspace = true
+version.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+# The reqwest client runtime. Without TLS: `reqwest` is built without its
+# default features, so an `https` URL fails when the request is sent unless
+# `rustls` (or the application's own `reqwest` feature) provides one.
+client = ["dep:http", "dep:reqwest"]
+# Mark the server's raw-body and event-stream successes `x-rpc-status: ok`, as
+# `treat-core`'s feature of the same name does for every envelope.
+rpc-status-header = ["treat-core/rpc-status-header"]
+# TLS for the client: `reqwest`'s `rustls` feature (aws-lc-rs, platform
+# certificate verifier).
+rustls = ["client", "reqwest/rustls"]
+# The axum server runtime; answers with treat's axum `IntoResponse`, reads JSON
+# bodies with treat's `ApiJson` (`serde-path`), and validates every input it
+# reads (`validator`), as a generated handler always does.
+server = [
+    "dep:axum",
+    "dep:http-body-util",
+    "dep:serde_path_to_error",
+    "dep:validator",
+    "treat-core/axum",
+    "treat-core/serde-path",
+    "treat-core/validator",
+]
+# Server-sent events and raw byte bodies, for whichever of `server` and
+# `client` is on.
+stream = ["dep:bytes", "dep:futures-core", "dep:futures-util", "reqwest?/stream"]
+
+[dependencies]
+axum = { version = "0.8", optional = true }
+bytes = { version = "1", optional = true }
+futures-core = { version = "0.3", optional = true }
+futures-util = { version = "0.3", default-features = false, features = ["io"], optional = true }
+# The client rebuilds a raw answer it had to read to tell it from a refusal
+# into the `reqwest::Response` it returns; `reqwest` does not re-export `http`.
+http = { version = "1", optional = true }
+# The server tells a raw body over its limit (`413`) from one that broke off by
+# finding `LengthLimitError` among the read error's sources; axum depends on it
+# already.
+http-body-util = { version = "0.1", optional = true }
+# No `json` feature: the client serializes bodies itself, so a value serde
+# refuses is `ClientError::Encode` rather than a transport error from `send`.
+reqwest = { version = "0.13", default-features = false, optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# The server names the parameter whose value serde refused, when it reads an
+# input rebuilt from a query string, a form or a path, by the failure's path.
+# `treat-core`'s `serde-path` uses it too, for a JSON body's pointer.
+serde_path_to_error = { version = "0.1", optional = true }
+treat-core = { workspace = true }
+validator = { version = "0.21", optional = true }
+
+[lints]
+workspace = true

@@ -27,6 +27,7 @@ pub mod meta_slots;
 pub mod ok_or_error;
 pub mod response;
 pub mod response_report;
+pub mod rpc;
 #[cfg(feature = "rpc-status-header")]
 pub mod rpc_status;
 #[cfg(feature = "serde-path")]

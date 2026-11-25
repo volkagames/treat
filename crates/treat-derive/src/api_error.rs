@@ -71,7 +71,7 @@ pub fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
             }
 
             Ok(quote! {
-                impl From<#treat::erris::Report> for #enum_name {
+                impl ::core::convert::From<#treat::erris::Report> for #enum_name {
                     #[track_caller]
                     fn from(value: #treat::erris::Report) -> Self {
                         #enum_name::#ident(value)
@@ -82,10 +82,10 @@ pub fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
         .transpose()?;
 
     Ok(quote! {
-        impl From<#enum_name> for #treat::ApiError<&'static str> {
+        impl ::core::convert::From<#enum_name> for #treat::ApiError<&'static ::core::primitive::str> {
             #[track_caller]
             fn from(value: #enum_name) -> Self {
-                let message = value.to_string();
+                let message = ::std::string::ToString::to_string(&value);
                 match value {
                     #(#inner_impl)*
                 }
