@@ -1065,6 +1065,31 @@ async fn a_streamed_raw_request_reaches_the_service_unread() {
     assert_eq!(reported.get("body"), Some(&json!("abcd")), "{reported}");
 }
 
+/// A body sent the way `curl -T file` sends one, with no `Content-Type`, to an
+/// operation whose list already admits a form post (`text/*` covers
+/// `text/plain`): read, and the service sees the headers as sent, without a
+/// type made up for it. `/convert`, which names `text/plain`, takes it too.
+#[tokio::test]
+async fn an_untyped_raw_request_is_read_where_a_form_post_already_is() {
+    let client = serve().await;
+    let (status, json) = exchange(&client, Method::POST, "/stream?name=t&opts=1", None, "untyped").await;
+    assert_eq!(status, 200, "{json}");
+    assert_eq!(
+        json.get("data"),
+        Some(&json!({
+            "name": "t",
+            "declared": 7,
+            "type": null,
+            "read": 7,
+            "body": "untyped",
+        })),
+        "{json}"
+    );
+
+    let (status, json) = exchange(&client, Method::POST, "/convert?name=t&opts=1", None, "abc").await;
+    assert_eq!(status, 200, "{json}");
+}
+
 /// An answer of the operation's own JSON that looks like a refusal: only the
 /// `x-rpc-status` header tells them apart, and the client prefers it.
 #[tokio::test]
@@ -1137,12 +1162,8 @@ async fn a_raw_request_from_a_cross_origin_form_is_refused_415() {
         "/upload?name=a&opts=1",
         "/stream?name=a&opts=1",
     ] {
-        for content_type in [
-            Some("application/x-www-form-urlencoded"),
-            Some("multipart/form-data; boundary=x"),
-            None,
-        ] {
-            let (status, json) = exchange(&client, Method::POST, path, content_type, "a=b").await;
+        for content_type in ["application/x-www-form-urlencoded", "multipart/form-data; boundary=x"] {
+            let (status, json) = exchange(&client, Method::POST, path, Some(content_type), "a=b").await;
             assert_eq!(
                 (status, first_code(&json)),
                 (415, Some("things::invalid")),
@@ -1154,6 +1175,13 @@ async fn a_raw_request_from_a_cross_origin_form_is_refused_415() {
     // `text/plain` is what `/convert` declares, and `/stream` takes `text/*`.
     let (status, _) = exchange(&client, Method::POST, "/upload?name=a&opts=1", Some("text/plain"), "a").await;
     assert_eq!(status, 415);
+
+    // An untyped body is as simple a request as a form post: refused where
+    // only `application/octet-stream` is declared, so a browser must still
+    // ask first.
+    let (status, json) = exchange(&client, Method::POST, "/upload?name=a&opts=1", None, "a").await;
+    assert_eq!((status, first_code(&json)), (415, Some("things::invalid")), "{json}");
+    assert_eq!(json.pointer("/errors/0/source/header"), Some(&json!("content-type")));
 
     // The client sends what it is told to; a type the operation does not
     // declare comes back as the refusal it is.

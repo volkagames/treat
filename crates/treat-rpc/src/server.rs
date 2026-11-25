@@ -38,8 +38,9 @@
 //! runtime cannot read is [`RuntimeCodes::INVALID_BODY`](crate::RuntimeCodes::INVALID_BODY),
 //! a failure of its own [`RuntimeCodes::INTERNAL_ERROR`](crate::RuntimeCodes::INTERNAL_ERROR).
 //! An RPC body is read only under a JSON `Content-Type`, and a raw one only
-//! under a type its operation declares (`415` otherwise, see
-//! `Runtime::no_input` for why); one too large answers `413`, and a JSON one
+//! under a type its operation declares, or under none where that list already
+//! admits a form post (`415` otherwise, see `Runtime::no_input` and
+//! `Runtime::require_content_type` for why); one too large answers `413`, and a JSON one
 //! that does not parse `422` with a pointer to where it went wrong. The other
 //! refusals of an RPC route answer `200`, since its callers read `errors[]`; an
 //! `@http` route gives them the status its callers read (see [`http_status`]).

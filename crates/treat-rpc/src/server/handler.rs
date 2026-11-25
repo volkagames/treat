@@ -121,7 +121,10 @@ impl<R: RuntimeCodes> Runtime<R> {
     /// - a `@raw(request:)` body is read only under a type the operation
     ///   declares ([`Runtime::require_content_type`]), so it is guarded as far
     ///   as that list leaves out the three types above, and ranges covering
-    ///   them (`text/*`, `*/*`);
+    ///   them (`text/*`, `*/*`). A request without a `Content-Type`, which a
+    ///   browser also sends without a preflight, is read only where the list
+    ///   admits one of them anyway, so it reaches no operation a form could
+    ///   not;
     /// - a `@raw(response:)` operation reads its input as JSON, here;
     /// - a `@subscription` is a `GET`, which a cross-origin page can send but
     ///   not read the answer of: the service must not change state on one;
@@ -159,16 +162,37 @@ impl<R: RuntimeCodes> Runtime<R> {
     ///
     /// Each entry of `declared` is a media range as the schema lists it:
     /// `text/csv` takes that type alone, `image/*` any subtype of `image`, and
-    /// `*/*` any type — but not a request that declares none, which is refused
-    /// whatever the list says. Types are compared by `type/subtype` alone,
-    /// without regard to case and with parameters (`; charset=utf-8`) on
-    /// either side ignored. A list naming a form's or plain text's type, or a
-    /// range covering one, admits a cross-origin form post: such an operation
-    /// needs another guard, as an `@http` one does.
+    /// `*/*` any type. Types are compared by `type/subtype` alone, without
+    /// regard to case and with parameters (`; charset=utf-8`) on either side
+    /// ignored. A header that is present but not a readable value (not UTF-8)
+    /// matches nothing.
+    ///
+    /// A request with no `Content-Type` at all — what `curl -T` sends — is
+    /// accepted exactly where the list already admits a CORS-safelisted type
+    /// (`application/x-www-form-urlencoded`, `multipart/form-data`,
+    /// `text/plain`, or a range covering one: `*/*`, `text/*`,
+    /// `multipart/*`), and refused everywhere else. A browser sends an untyped
+    /// body (a `BufferSource`, a `Blob` without a type) cross-origin without a
+    /// preflight too, so absence is a simple request like a form post: where
+    /// the list admits a form post, the operation is already reachable from
+    /// another origin and refusing absence protects nothing; where it does not
+    /// (`application/octet-stream`, `text/csv`, `image/*`), refusing absence
+    /// is what keeps the browser asking first. The runtime does not supply a
+    /// type for such a request: the service sees the headers as sent, without
+    /// one, and decides how to read the body itself.
+    ///
+    /// A list that admits a form post, whether by naming one of those types or
+    /// by a range covering one, admits a cross-origin request: such an
+    /// operation needs another guard, as an `@http` one does.
     pub fn require_content_type(headers: &HeaderMap, declared: &[&str]) -> Result<(), Refusal> {
-        let content_type = headers.get(header::CONTENT_TYPE).and_then(|value| value.to_str().ok());
-        let accepted = content_type
-            .is_some_and(|content_type| declared.iter().any(|range| media::matches_range(content_type, range)));
+        let accepted = match headers.get(header::CONTENT_TYPE) {
+            None => admits_a_simple_request(declared),
+            Some(value) => {
+                value
+                    .to_str()
+                    .is_ok_and(|content_type| declared.iter().any(|range| media::matches_range(content_type, range)))
+            }
+        };
         if accepted {
             return Ok(());
         }
@@ -302,6 +326,23 @@ impl<R: RuntimeCodes> Runtime<R> {
             bare => Self::respond_bare(bare),
         }
     }
+}
+
+/// The request types a page on another origin can send with a body and
+/// without a CORS preflight, besides none at all (the Fetch standard's
+/// CORS-safelisted `Content-Type` values).
+const CORS_SAFELISTED_TYPES: [&str; 3] = ["application/x-www-form-urlencoded", "multipart/form-data", "text/plain"];
+
+/// Whether the media ranges `declared` admit a request a cross-origin page can
+/// send without a preflight: one naming a CORS-safelisted type, or a range
+/// covering one. Where they do, a request without a `Content-Type` — which a
+/// browser also sends without a preflight — opens nothing new.
+fn admits_a_simple_request(declared: &[&str]) -> bool {
+    declared.iter().any(|range| {
+        CORS_SAFELISTED_TYPES
+            .iter()
+            .any(|safelisted| media::matches_range(safelisted, range))
+    })
 }
 
 /// A success that serializes as the envelope itself, written as `ApiResponse`'s

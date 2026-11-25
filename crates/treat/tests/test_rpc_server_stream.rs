@@ -132,10 +132,6 @@ async fn a_declared_range_takes_every_subtype() {
 
     let anything: &[&str] = &["*/*"];
     assert!(Rt::raw_body(typed(Some("text/plain"), "a"), anything, 4).await.is_ok());
-    assert!(
-        Rt::raw_body(typed(None, "a"), anything, 4).await.is_err(),
-        "a request that declares no type is not any type"
-    );
 
     let (status, json) = read(Rt::require_content_type(&axum::http::HeaderMap::new(), &[]).expect_err("none")).await;
     assert_eq!((status, code(&json)), (415, Some(INVALID)));
@@ -143,6 +139,75 @@ async fn a_declared_range_takes_every_subtype() {
         json.pointer("/errors/0/message"),
         Some(&json!("the operation accepts no request body"))
     );
+}
+
+/// A request without `Content-Type` is accepted exactly where the list already
+/// admits a type a cross-origin page posts without a preflight; elsewhere the
+/// refusal is what makes the browser ask first.
+#[tokio::test]
+async fn a_missing_type_is_accepted_only_where_a_form_post_already_is() {
+    enum Sent {
+        Absent,
+        Typed(&'static str),
+        NotUtf8,
+    }
+    let cases: &[(&[&str], Sent, bool)] = &[
+        (&["application/octet-stream"], Sent::Absent, false),
+        (
+            &["application/octet-stream"],
+            Sent::Typed("application/octet-stream"),
+            true,
+        ),
+        (&["text/csv"], Sent::Absent, false),
+        (&["image/*"], Sent::Absent, false),
+        (&["*/*"], Sent::Absent, true),
+        (&["text/*"], Sent::Absent, true),
+        (&["multipart/*"], Sent::Absent, true),
+        (&["text/plain"], Sent::Absent, true),
+        (&["application/x-www-form-urlencoded"], Sent::Absent, true),
+        (&["multipart/form-data", "application/octet-stream"], Sent::Absent, true),
+        (&["*/*"], Sent::NotUtf8, false),
+        (&["*/*"], Sent::Typed(""), false),
+        (&[], Sent::Absent, false),
+    ];
+    for (declared, sent, accepted) in cases {
+        let mut headers = axum::http::HeaderMap::new();
+        let shown = match sent {
+            Sent::Absent => "absent".to_string(),
+            Sent::Typed(value) => {
+                headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(value));
+                format!("{value:?}")
+            }
+            Sent::NotUtf8 => {
+                let value = HeaderValue::from_bytes(b"text/\xffplain").expect("a header value, though not UTF-8");
+                headers.insert(header::CONTENT_TYPE, value);
+                "not UTF-8".to_string()
+            }
+        };
+        let result = Rt::require_content_type(&headers, declared);
+        let refused = match result {
+            Ok(()) => {
+                assert!(accepted, "{declared:?} {shown}: accepted");
+                continue;
+            }
+            Err(refused) => refused,
+        };
+        assert!(!accepted, "{declared:?} {shown}: refused");
+        let (status, json) = read(refused).await;
+        assert_eq!(
+            (status, code(&json)),
+            (415, Some(INVALID)),
+            "{declared:?} {shown}: {json}"
+        );
+        assert_eq!(json.pointer("/errors/0/source/header"), Some(&json!("content-type")));
+    }
+
+    // The buffered path goes through the same check.
+    let anything: &[&str] = &["*/*"];
+    let read_back = Rt::raw_body(typed(None, "a"), anything, 4).await.ok();
+    assert_eq!(read_back, Some(b"a".to_vec()));
+    let octets: &[&str] = &["application/octet-stream"];
+    assert!(Rt::raw_body(typed(None, "a"), octets, 4).await.is_err());
 }
 
 #[derive(Debug, Serialize)]

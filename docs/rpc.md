@@ -283,10 +283,21 @@ can be driven by any page the visitor opens. What each kind of route does:
   type the operation declares, and a streamed one's handler checks the same
   with `require_content_type` before the service gets the body; both refuse at
   `415`. Each declared entry is a media range: `text/csv` takes that type,
-  `image/*` any subtype of `image`, `*/*` any type — but never a request that
-  declares none. The check is only as strong as the list: an operation
-  declaring `text/plain`, a form type, or a range covering one (`text/*`,
-  `*/*`) is reachable from a cross-origin form and needs a guard of its own.
+  `image/*` any subtype of `image`, `*/*` any type. The check is only as
+  strong as the list: an operation declaring `text/plain`, a form type, or a
+  range covering one (`text/*`, `multipart/*`, `*/*`) is reachable from a
+  cross-origin form and needs a guard of its own.
+- **`@raw(request: [...])` without `Content-Type`** (what `curl -T file`
+  sends) — accepted exactly where the list already admits one of the three
+  safelisted types above, or a range covering one; refused at `415`
+  everywhere else. A browser sends an untyped body (a `BufferSource`, a `Blob`
+  without a type) cross-origin without a preflight as well, so a missing type
+  is let in only where a form post already is: `["application/octet-stream"]`
+  or `["text/csv"]` keeps refusing it, and a browser keeps having to ask
+  first; `["*/*"]` or `["multipart/form-data", "application/octet-stream"]`
+  accepts it. The runtime supplies no type: the service sees the headers as
+  sent, without a `Content-Type`, and decides how to read the body. A header
+  that is present but unreadable (not UTF-8) is still refused.
 - **`@raw(response:)`** reads its input as JSON, like an RPC.
 - **`@subscription`** is a `GET`: a cross-origin page can open one but not read
   it, so the service must not change state on one.
