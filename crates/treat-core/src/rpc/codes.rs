@@ -8,14 +8,18 @@ use crate::{ApiError, ApiErrorCode};
 /// attribute [`ApiErrorCode`](crate::ApiErrorCode)'s derive reads for
 /// `Display`), else its `#[serde(rename = "...")]` or the enum's
 /// `#[serde(rename_all = "...")]`, else its identifier (a raw one unprefixed:
-/// `r#type` is `type`). The derive refuses an enum where `#[code]` and serde
-/// disagree, and one serde would write and read under different names.
+/// `r#type` is `type`). The derive refuses an enum where `#[code]` and a name
+/// serde is told (`rename`, `rename_all`) disagree, and one serde would write
+/// and read under different names.
 ///
-/// `as_str`, serde and `Display` from the `ApiErrorCode` derive write one
+/// `as_str` and `Display` from the `ApiErrorCode` derive always write one
 /// string: that derive reads `#[code]`, serde's `rename` / `rename_all` and the
-/// identifier in the same order. serde's `alias`, `other` and `skip_*` are not
-/// mirrored: `from_name` accepts the wire names only, and `ALL` lists every
-/// variant.
+/// identifier in the same order. serde writes it too wherever serde is told a
+/// name, or neither is: a `#[code]` serde is not told about is the wire name,
+/// while serde still writes the identifier — add a matching
+/// `#[serde(rename)]` if the enum also travels as a payload. serde's `alias`,
+/// `other` and `skip_*` are not mirrored: `from_name` accepts the wire names
+/// only, and `ALL` lists every variant.
 ///
 /// The runtime reads codes by name instead of through serde because a name is
 /// what crosses between code sets: a flat registry and the narrower set an
@@ -29,10 +33,11 @@ pub trait WireEnum: Sized + Copy + 'static {
 
     /// The wire name of this value: its `#[code]`, else the name serde writes.
     ///
-    /// What serde writes only where serde is told the same name or none is
-    /// spelled: a variant with `#[code("things::gone")]` and no serde rename
-    /// answers `"things::gone"` here, while serde still writes its identifier.
-    /// The derive refuses only a `#[code]` and a serde name that disagree.
+    /// What serde writes only where serde is told the same name or neither
+    /// is spelled: a variant with `#[code("things::gone")]` and no serde
+    /// rename answers `"things::gone"` here, while serde still writes its
+    /// identifier. The derive refuses only a `#[code]` and a serde name that
+    /// disagree.
     ///
     /// By value: the type is `Copy`, and a call through a reference
     /// (`code.as_str()` on a `&R`) still works by auto-deref.

@@ -9,9 +9,9 @@
 //! The lookups trust that order rather than checking it on every request:
 //! [`check_table`] checks it once, from a test of the code that owns the table.
 //!
-//! A row's path is the path the router mounts, `{name}` segments and all; its
-//! method is upper-case as HTTP spells it, or [`ANY`] for a route that answers
-//! every method.
+//! A row's path is the path the router mounts, `{name}` and `{*name}`
+//! segments and all; its method is upper-case as HTTP spells it, or [`ANY`]
+//! for a route that answers every method.
 
 /// The method of a row that answers every method.
 pub const ANY: &str = "ANY";
@@ -33,10 +33,11 @@ pub trait RouteRow {
 ///
 /// `path` is the request's (`/api/user/u1`) or the route's
 /// (`/api/user/{user_id}`, a router's matched path): a `{name}` segment of a row
-/// takes any one non-empty segment. The route is chosen as the router chooses
-/// it, a fixed segment before a parameter, and only then the method: a method
-/// the chosen route lacks is `None`, as the router answers it `405`, even where
-/// another route would fit.
+/// takes any one non-empty segment, and a final catch-all `{*name}` the
+/// non-empty rest of the path (see [`fits`]). The route is chosen as the router
+/// chooses it, a fixed segment before a `{name}` or a `{*name}`, and only
+/// then the method: a method the chosen route lacks is `None`, as the router
+/// answers it `405`, even where another route would fit.
 ///
 /// A path some row spells exactly — every segment fixed, or a route's own
 /// template — is a binary search; only a path no row spells scans the rows with
@@ -107,25 +108,65 @@ pub fn rows_at<'a, Row: RouteRow>(rows: &'a [Row], path: &str) -> &'a [Row] {
     rows.get(..len).unwrap_or_default()
 }
 
-/// Whether `path` is a path the route `route` matches: as many segments, each
-/// spelled the same or taken by a `{name}` segment, which takes exactly one
-/// non-empty segment.
+/// Whether `path` is a path the route `route` matches, as `matchit` (axum's
+/// router) matches it: segment by segment, each spelled the same or taken by
+/// a `{name}` segment, which takes exactly one non-empty segment. A route
+/// ending in a catch-all `{*name}` takes everything after the segments before
+/// it — one segment or several, empty ones and a trailing `/` included — as
+/// long as that is not empty: `/files/{*rest}` matches `/files/a` and
+/// `/files/a/b/`, not `/files/` or `/files`.
 pub fn fits(route: &str, path: &str) -> bool {
-    route.split('/').count() == path.split('/').count()
-        && route
-            .split('/')
-            .zip(path.split('/'))
-            .all(|(want, got)| want == got || (want.starts_with('{') && !got.is_empty()))
+    let catch_all = route.rsplit_once('/').filter(|(_, last)| is_catch_all(last));
+    let Some((head, _)) = catch_all else {
+        return route.split('/').count() == path.split('/').count()
+            && route
+                .split('/')
+                .zip(path.split('/'))
+                .all(|(want, got)| segment_fits(want, got));
+    };
+    let fixed = head.split('/').count();
+    let mut parts = path.splitn(fixed.saturating_add(1), '/');
+    // `zip` takes a route segment first, so it stops without taking a part
+    // once the head is done: what is left of `parts` is the rest.
+    let head_fits = head
+        .split('/')
+        .zip(parts.by_ref())
+        .all(|(want, got)| segment_fits(want, got));
+    let rest = parts.next();
+    head_fits && rest.is_some_and(|rest| !rest.is_empty())
 }
 
-/// Whether the route `a` has a fixed segment where `b` has its first parameter
-/// the two do not share: what the router tries first.
+/// Whether the route segment `want` takes the path segment `got`: spelled the
+/// same, or a `{name}` and `got` not empty.
+fn segment_fits(want: &str, got: &str) -> bool {
+    want == got || (want.starts_with('{') && !got.is_empty())
+}
+
+/// Whether a route segment is a catch-all, `{*name}`.
+fn is_catch_all(segment: &str) -> bool {
+    segment.starts_with("{*") && segment.ends_with('}')
+}
+
+/// How the router ranks a route segment where two routes differ: a fixed one
+/// first, then a `{name}`, then a catch-all `{*name}`. axum refuses to mount a
+/// `{name}` and a `{*name}` at one place, so only the first step matters to
+/// a table a router mounts; the second keeps the order total.
+fn rank(segment: &str) -> u8 {
+    match (segment.starts_with('{'), is_catch_all(segment)) {
+        (false, _) => 0,
+        (true, false) => 1,
+        (true, true) => 2,
+    }
+}
+
+/// Whether the route `a` comes before `b` where the two first differ in kind
+/// of segment — a fixed segment where `b` has a parameter, or a `{name}` where
+/// `b` has a catch-all: what the router tries first.
 fn more_fixed(a: &str, b: &str) -> bool {
     for (x, y) in a.split('/').zip(b.split('/')) {
-        match (x.starts_with('{'), y.starts_with('{')) {
-            (false, true) => return true,
-            (true, false) => return false,
-            _ => {}
+        let (x, y) = (rank(x), rank(y));
+        if x != y {
+            return x < y;
         }
     }
     false

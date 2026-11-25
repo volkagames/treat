@@ -10,9 +10,20 @@ publish = false
 # `treat` WITHOUT a direct `erris` dependency and WITHOUT importing the prelude,
 # so any bare `ApiResponse`/`erris` in generated code fails to compile here.
 
+# A `telemetry` feature of the *dependant's* own, on by default: `root_span!`
+# once gated its OpenTelemetry call on `cfg(feature = "telemetry")`, which is
+# evaluated in the calling crate, so this crate failed with E0425 (and a crate
+# without the feature silently lost the OTel parent). Never read by the code.
+[features]
+default = ["telemetry"]
+telemetry = []
+
 [dependencies]
+# Named by a custom `RootSpanBuilder`'s signatures (`root_span!` coverage).
+actix-web = { version = "4.17", default-features = false }
 thiserror = "2"
-treat = { path = "../treat", features = ["derive"] }
+tracing = "0.1"
+treat = { path = "../treat", features = ["derive", "actix-middleware"] }
 
 # A core-only dependant: `treat-core` + `treat-derive` with no facade in scope.
 treat-core = { path = "../treat-core" }

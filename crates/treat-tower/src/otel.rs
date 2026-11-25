@@ -26,12 +26,15 @@ pub(crate) fn set_otel_parent(headers: &http::HeaderMap, span: &tracing::Span) {
     let parent_context = opentelemetry::global::get_text_map_propagator(|propagator| {
         propagator.extract(&RequestHeaderCarrier { headers })
     });
-    if let Err(err) = span.set_parent(parent_context) {
+    let parented = span.set_parent(parent_context);
+    if let Err(err) = parented {
         tracing::debug!(?err, "failed to set OpenTelemetry parent context");
     }
-    let trace_id = {
-        let id = span.context().span().span_context().trace_id();
-        format!("{id:032x}")
-    };
-    span.record("trace_id", tracing::field::display(trace_id));
+    // Without an OpenTelemetry layer on the subscriber the span has no
+    // context and the id is all zeros; leave `trace_id` empty then rather
+    // than log a value that matches every other untraced request.
+    let trace_id = span.context().span().span_context().trace_id();
+    if trace_id != opentelemetry::trace::TraceId::INVALID {
+        span.record("trace_id", tracing::field::display(format!("{trace_id:032x}")));
+    }
 }

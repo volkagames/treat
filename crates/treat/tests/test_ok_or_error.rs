@@ -1,4 +1,5 @@
 //! Coverage for the `OkOrError` extension trait on `Option` and `bool`.
+#![cfg(feature = "derive")]
 
 use treat::prelude::*;
 use treat::{ApiError, ApiErrorHandler, error};

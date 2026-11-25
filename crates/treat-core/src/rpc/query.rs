@@ -70,6 +70,12 @@ pub struct QueryField {
     /// A list repeats its key, which is what `URLSearchParams` writes and what
     /// reading with `getAll` expects. Only a list does: a value of a field that
     /// is not one travels under one key, as JSON text if it is an array.
+    ///
+    /// An empty list repeats its key no times, so it travels as nothing at
+    /// all: a client sends none of it, and a server leaves the field out of
+    /// the input it rebuilds, as it does any absent parameter. The input's
+    /// list field needs `#[serde(default)]` to read back empty rather than be
+    /// refused as a missing field (an `Option` list reads back as `None`).
     pub list: bool,
 }
 

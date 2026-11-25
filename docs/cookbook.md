@@ -52,8 +52,8 @@ ApiResponse::from(vec![1u8, 2, 3]).with_meta(Meta { total: 100 })
 
 ## Add breadcrumbs as an error bubbles up
 
-`track_api_error()` records each layer it passes through, so `Debug` output
-and the `error_hops` log field show the full path:
+`track_api_error()` records each layer it passes through, so the `{:?}` output
+and the loggers' `error_hops` field show the full path:
 
 ```rust
 use treat::prelude::*;
@@ -135,12 +135,16 @@ use treat::deserialize_body;
 let body: CreateUser = deserialize_body(&bytes)?; // Err carries pointer "/email"
 ```
 
+With `axum` or `actix` as well, the `ApiJson<T>` extractor
+(`treat::extract_axum` / `treat::extract_actix`) does this for a handler
+argument.
+
 Field validation — enable `validator`, derive `Validate`, and call
 `validate_api()`; each violation becomes one `errors[]` entry with its pointer:
 
 ```rust,ignore
 use treat::ValidateApi;
-body.validate_api()?; // Err is an ApiResponse with one error per invalid field
+body.validate_api()?; // Err is an ApiResponse with one error per violated rule
 ```
 
 In a handler, enable `validator-extract` (+ `axum` or `actix`) and let the
@@ -156,5 +160,12 @@ async fn create(ApiValidated(body): ApiValidated<CreateUser>) -> ApiResponse<Use
 }
 ```
 
-Bad JSON returns `invalid_body` with a pointer; an invalid field returns the
-validator rule code (`email`, `length`, …) with a pointer — no raw `400`.
+Every rejection is the `treat` envelope, never the framework's own plain-text
+error:
+
+- a body that is not JSON, or does not match `T`, returns `invalid_body` at
+  `422`, with a pointer when the failure is at a field;
+- an invalid field returns the validator rule code (`email`, `length`, …) with
+  a pointer, one `errors[]` entry per violated rule, at `422`;
+- a body that cannot be read at all keeps the framework's status for it — `413`
+  for one over the size limit — and returns `invalid_body`.

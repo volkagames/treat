@@ -21,7 +21,8 @@ pub(crate) fn is(content_type: &str, expected: &str) -> bool {
 
 /// Whether a `Content-Type` value declares JSON: `application/json`, or any
 /// type with the `+json` structured-syntax suffix (RFC 6839) such as
-/// `application/problem+json`, in any case and with any parameters.
+/// `application/problem+json`, in any case and with any parameters. The
+/// suffix needs a name before it: `application/+json` is no JSON type.
 #[cfg(feature = "server")]
 pub(crate) fn is_json(content_type: &str) -> bool {
     let Some((kind, subtype)) = essence(content_type).split_once('/') else {
@@ -30,6 +31,8 @@ pub(crate) fn is_json(content_type: &str) -> bool {
     let suffixed = subtype
         .len()
         .checked_sub(JSON_SUFFIX.len())
+        // A name before the suffix: `+json` alone is no subtype.
+        .filter(|start| *start > 0)
         .and_then(|start| subtype.get(start..))
         .is_some_and(|suffix| suffix.eq_ignore_ascii_case(JSON_SUFFIX));
     let plain = kind.eq_ignore_ascii_case("application") && subtype.eq_ignore_ascii_case("json");
@@ -103,7 +106,16 @@ mod tests {
         ] {
             assert!(is_json(json), "{json}");
         }
-        for other in ["application/jsonl", "json", "+json", "/+json", "text/plain", ""] {
+        for other in [
+            "application/jsonl",
+            "json",
+            "+json",
+            "/+json",
+            "application/+json",
+            "application/+JSON; charset=utf-8",
+            "text/plain",
+            "",
+        ] {
             assert!(!is_json(other), "{other}");
         }
     }

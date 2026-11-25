@@ -230,3 +230,65 @@ mod shadowed_names {
         let _: ::core::result::Result<treat::ApiResponse<(), ()>, M> = ::core::convert::Into::into(M::Gone);
     }
 }
+
+/// `root_span!` from a custom `RootSpanBuilder`, path-qualified and with no
+/// `use` of the macro: both arms must reach everything through `$crate`, and
+/// the expansion must not depend on the caller's features (see the
+/// `telemetry` feature in Cargo.toml) or on the names it shadows here.
+#[allow(non_camel_case_types)]
+mod root_span_hygiene {
+    use actix_web::dev::{ServiceRequest, ServiceResponse};
+
+    struct Cow;
+    struct Into;
+    struct RequestId;
+    mod std {}
+    mod private {}
+    #[allow(unused_macros)]
+    macro_rules! format {
+        ($($tt:tt)*) => {
+            compile_error!("generated code must not call a local `format!`")
+        };
+    }
+    #[allow(unused_macros)]
+    macro_rules! root_span {
+        ($($tt:tt)*) => {
+            compile_error!("generated code must not call a local `root_span!`")
+        };
+    }
+
+    struct Bare;
+
+    impl treat::RootSpanBuilder for Bare {
+        fn on_request_start(request: &ServiceRequest) -> tracing::Span {
+            treat::root_span!(request)
+        }
+
+        fn on_request_end<B>(
+            span: tracing::Span,
+            outcome: &::core::result::Result<ServiceResponse<B>, actix_web::Error>,
+        ) {
+            <treat::DefaultRootSpanBuilder as treat::RootSpanBuilder>::on_request_end(span, outcome)
+        }
+    }
+
+    struct WithFields;
+
+    impl treat::RootSpanBuilder for WithFields {
+        fn on_request_start(request: &ServiceRequest) -> tracing::Span {
+            treat::root_span!(request, tenant = tracing::field::Empty, region = "eu")
+        }
+
+        fn on_request_end<B>(
+            span: tracing::Span,
+            outcome: &::core::result::Result<ServiceResponse<B>, actix_web::Error>,
+        ) {
+            <treat::DefaultRootSpanBuilder as treat::RootSpanBuilder>::on_request_end(span, outcome)
+        }
+    }
+
+    fn _assert_loggers() {
+        let _ = treat::Logger::<Bare>::new();
+        let _ = treat::Logger::<WithFields>::new().error_logger(treat::error_log_for::<&'static str>);
+    }
+}

@@ -9,13 +9,44 @@ use std::task::{Context, Poll};
 use tracing::Span;
 use treat_core::ApiErrorHandler;
 
-#[derive(Clone)]
-pub struct Logger<RootSpan: RootSpanBuilder, L: Fn(&actix_web::Error) + Clone> {
+/// The actix-web tracing middleware.
+///
+/// Per request it resolves a [`RequestId`] (adopting a UUID `x-request-id`),
+/// opens the root span through `R` (a [`RootSpanBuilder`]), calls the error
+/// logger `L` for a failed request (or logs `request success` at `debug!`),
+/// and writes the id back on the response as `x-request-id`.
+///
+/// An inner service that resolves to `Err` (a middleware wrapped inside the
+/// logger rejecting the request) is logged and passed on untouched: it has no
+/// response yet, so it gets no `x-request-id`. A middleware that should keep
+/// the id answers `Ok(req.error_response(err))` instead of `Err(err)`.
+///
+/// ```ignore
+/// // default builder, default logger (`error_log`)
+/// App::new().wrap(Logger::default());
+/// // default builder, typed-code logger
+/// App::new().wrap(Logger::with_error_logger(error_log_for::<MyCode>));
+/// // custom builder, typed-code logger
+/// App::new().wrap(Logger::<MyRootSpan>::new().error_logger(error_log_for::<MyCode>));
+/// ```
+pub struct Logger<R: RootSpanBuilder = DefaultRootSpanBuilder, L: Fn(&actix_web::Error) + Clone = fn(&actix_web::Error)>
+{
     error_handler: L,
-    root_span_builder: std::marker::PhantomData<RootSpan>,
+    root_span_builder: std::marker::PhantomData<R>,
+}
+
+impl<R: RootSpanBuilder, L: Fn(&actix_web::Error) + Clone> Clone for Logger<R, L> {
+    fn clone(&self) -> Self {
+        Self {
+            error_handler: self.error_handler.clone(),
+            root_span_builder: std::marker::PhantomData,
+        }
+    }
 }
 
 impl<L: Fn(&actix_web::Error) + Clone> Logger<DefaultRootSpanBuilder, L> {
+    /// The default root span builder with `error_handler` as the error logger.
+    /// For a custom [`RootSpanBuilder`], use [`Logger::error_logger`].
     pub fn with_error_logger(error_handler: L) -> Self {
         Self {
             root_span_builder: Default::default(),
@@ -33,11 +64,24 @@ impl Default for Logger<DefaultRootSpanBuilder, fn(&actix_web::Error)> {
     }
 }
 
-impl<RootSpan: RootSpanBuilder> Logger<RootSpan, fn(&actix_web::Error)> {
-    pub fn new() -> Logger<RootSpan, fn(&actix_web::Error)> {
+impl<R: RootSpanBuilder> Logger<R, fn(&actix_web::Error)> {
+    /// A logger with the root span builder `R` and the default [`error_log`]:
+    /// `Logger::<MyRootSpan>::new()`.
+    pub fn new() -> Logger<R, fn(&actix_web::Error)> {
         Logger {
             root_span_builder: Default::default(),
             error_handler: error_log,
+        }
+    }
+}
+
+impl<R: RootSpanBuilder, L: Fn(&actix_web::Error) + Clone> Logger<R, L> {
+    /// Replace the error logger, keeping the root span builder `R`:
+    /// `Logger::<MyRootSpan>::new().error_logger(error_log_for::<MyCode>)`.
+    pub fn error_logger<L2: Fn(&actix_web::Error) + Clone>(self, error_handler: L2) -> Logger<R, L2> {
+        Logger {
+            root_span_builder: Default::default(),
+            error_handler,
         }
     }
 }
@@ -138,49 +182,49 @@ where
     type Output = Result<ServiceResponse<StreamSpan<B>>, Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let error_handle = self.error_handler.clone();
         let this = self.project();
 
         let fut = this.fut;
         let span = this.span;
+        let error_handler = this.error_handler;
         let request_id = *this.request_id;
 
         span.in_scope(|| {
-            match fut.poll(cx) {
-                Poll::Pending => Poll::Pending,
-                Poll::Ready(mut outcome) => {
-                    RootSpanType::on_request_end(Span::current(), &outcome);
+            let polled = fut.poll(cx);
+            let Poll::Ready(mut outcome) = polled else {
+                return Poll::Pending;
+            };
 
-                    match &outcome {
-                        Ok(response) => {
-                            match response.response().error() {
-                                Some(err) => error_handle(err),
-                                None => tracing::debug!("request success"),
-                            }
-                        }
-                        Err(err) => error_handle(err),
+            RootSpanType::on_request_end(span.clone(), &outcome);
+
+            match &outcome {
+                Ok(response) => {
+                    match response.response().error() {
+                        Some(err) => error_handler(err),
+                        None => tracing::debug!("request success"),
                     }
+                }
+                Err(err) => error_handler(err),
+            }
 
-                    // A handler that set the header itself has the final say; only
-                    // fill in the gap so the caller can always correlate the
-                    // response with a log.
-                    if let Ok(response) = &mut outcome {
-                        let headers = response.headers_mut();
-                        if !headers.contains_key(&crate::X_REQUEST_ID) {
-                            headers.insert(crate::X_REQUEST_ID, request_id.to_header_value());
-                        }
-                    }
-
-                    Poll::Ready(outcome.map(|service_response| {
-                        service_response.map_body(|_, body| {
-                            StreamSpan {
-                                body,
-                                span: span.clone(),
-                            }
-                        })
-                    }))
+            // A handler that set the header itself has the final say; only fill
+            // in the gap so the caller can always correlate the response with a
+            // log. An `Err` has no response to put it on.
+            if let Ok(response) = &mut outcome {
+                let headers = response.headers_mut();
+                if !headers.contains_key(&crate::X_REQUEST_ID) {
+                    headers.insert(crate::X_REQUEST_ID, request_id.to_header_value());
                 }
             }
+
+            Poll::Ready(outcome.map(|service_response| {
+                service_response.map_body(|_, body| {
+                    StreamSpan {
+                        body,
+                        span: span.clone(),
+                    }
+                })
+            }))
         })
     }
 }
@@ -247,11 +291,18 @@ fn log_api_error<C: treat_core::ApiErrorCode + 'static>(err: &actix_web::Error, 
     true
 }
 
+/// [`error_log`] at `debug!`.
 #[inline(always)]
 pub fn debug_log(err: &actix_web::Error) {
     debug_log_for::<&'static str>(err)
 }
 
+/// The [`Logger`](crate::Logger)'s default error logger, at `error!`.
+///
+/// Logs `error_code`, `error_location`, `error_hops` and `error_source` for an
+/// `ApiError` with the default `&'static str` code. An error with a typed code
+/// enum is not recognised and falls into the generic `request error` arm (only
+/// its `Debug`); use [`error_log_for`] for those.
 #[inline(always)]
 pub fn error_log(err: &actix_web::Error) {
     error_log_for::<&'static str>(err)
@@ -262,10 +313,16 @@ pub fn error_log(err: &actix_web::Error) {
 /// Falls back to the default `ApiError<&'static str>` before the generic arm, so
 /// a mixed codebase (library helpers commonly raise the default) keeps
 /// structured logs for both. Pass it to
-/// [`Logger::with_error_logger`](crate::Logger::with_error_logger).
+/// [`Logger::with_error_logger`](crate::Logger::with_error_logger) or
+/// [`Logger::error_logger`](crate::Logger::error_logger).
 #[inline(always)]
 pub fn debug_log_for<C: treat_core::ApiErrorCode + 'static>(err: &actix_web::Error) {
-    if log_api_error::<C>(err, tracing::Level::DEBUG) || log_api_error::<&'static str>(err, tracing::Level::DEBUG) {
+    let logged = log_api_error::<C>(err, tracing::Level::DEBUG);
+    if logged {
+        return;
+    }
+    let logged = log_api_error::<&'static str>(err, tracing::Level::DEBUG);
+    if logged {
         return;
     }
 
@@ -276,7 +333,12 @@ pub fn debug_log_for<C: treat_core::ApiErrorCode + 'static>(err: &actix_web::Err
 /// [`debug_log_for`].
 #[inline(always)]
 pub fn error_log_for<C: treat_core::ApiErrorCode + 'static>(err: &actix_web::Error) {
-    if log_api_error::<C>(err, tracing::Level::ERROR) || log_api_error::<&'static str>(err, tracing::Level::ERROR) {
+    let logged = log_api_error::<C>(err, tracing::Level::ERROR);
+    if logged {
+        return;
+    }
+    let logged = log_api_error::<&'static str>(err, tracing::Level::ERROR);
+    if logged {
         return;
     }
 

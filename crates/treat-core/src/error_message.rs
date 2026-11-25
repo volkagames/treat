@@ -94,7 +94,8 @@ impl From<ErrorMessage> for serde_json::Value {
             map.insert("instance".into(), instance.into());
         }
 
-        if let Some(source) = err.source.filter(|s| !s.is_empty()) {
+        let source = err.source.filter(|s| !s.is_empty());
+        if let Some(source) = source {
             map.insert(
                 "source".into(),
                 serde_json::to_value(source).unwrap_or(serde_json::Value::Null),

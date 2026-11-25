@@ -2713,6 +2713,7 @@ dependencies = [
  "pin-project",
  "tracing",
  "tracing-opentelemetry",
+ "tracing-subscriber",
  "treat-core",
  "uuid",
 ]
@@ -2765,7 +2766,9 @@ dependencies = [
 name = "treat-hygiene"
 version = "0.26.1"
 dependencies = [
+ "actix-web",
  "thiserror",
+ "tracing",
  "treat",
  "treat-core",
  "treat-derive",
@@ -2775,7 +2778,12 @@ dependencies = [
 name = "treat-hygiene-renamed"
 version = "0.26.1"
 dependencies = [
+ "actix-web",
+ "opentelemetry",
  "thiserror",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
  "treat",
 ]
 
@@ -2809,6 +2817,8 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-opentelemetry",
+ "tracing-subscriber",
+ "treat-core",
  "uuid",
 ]
 

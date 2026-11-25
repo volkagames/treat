@@ -38,7 +38,9 @@ impl<R: RuntimeCodes> Runtime<R> {
     /// Bytes, not text, and refused rather than altered when a pair is not
     /// UTF-8 once decoded — escaped (`%E9`) or raw, as a legacy Latin-1 form may
     /// send it. Replacing the byte would hand the service a value nobody sent,
-    /// a password among them, and make two different ones equal.
+    /// a password among them, and make two different ones equal. A refused
+    /// value names its key in `source.parameter`; a refused key has no name
+    /// to give.
     pub fn url_pairs(encoded: &[u8]) -> Result<Vec<(String, String)>, Refusal> {
         let mut pairs = Vec::new();
         for pair in encoded.split(|byte| *byte == b'&') {
@@ -47,7 +49,8 @@ impl<R: RuntimeCodes> Runtime<R> {
             }
             let mut halves = pair.splitn(2, |byte| *byte == b'=');
             let key = Self::url_text(halves.next().unwrap_or_default())?;
-            let value = Self::url_text(halves.next().unwrap_or_default())?;
+            let value = String::from_utf8(url_bytes(halves.next().unwrap_or_default()))
+                .map_err(|_| Self::not_utf8(Some(&key)))?;
             pairs.push((key, value));
         }
         Ok(pairs)
@@ -55,33 +58,17 @@ impl<R: RuntimeCodes> Runtime<R> {
 
     /// One `application/x-www-form-urlencoded` component as text: `+` is a
     /// space, `%XX` the byte it names (in either case), and a `%` without two
-    /// hex digits after it itself.
+    /// hex digits after it itself. One that is not UTF-8 once decoded is
+    /// refused without naming a parameter; [`Runtime::url_pairs`] names the
+    /// key of a value it refuses.
     pub fn url_text(encoded: &[u8]) -> Result<String, Refusal> {
-        let mut bytes = Vec::with_capacity(encoded.len());
-        let mut rest = encoded;
-        while let [first, tail @ ..] = rest {
-            rest = tail;
-            let escaped = match (*first, tail) {
-                (b'%', [high, low, after @ ..]) if high.is_ascii_hexdigit() && low.is_ascii_hexdigit() => {
-                    let digits = [*high, *low];
-                    let byte = std::str::from_utf8(&digits)
-                        .ok()
-                        .and_then(|hex| u8::from_str_radix(hex, 16).ok());
-                    byte.map(|byte| (byte, after))
-                }
-                _ => None,
-            };
-            match (escaped, *first) {
-                (Some((byte, after)), _) => {
-                    bytes.push(byte);
-                    rest = after;
-                }
-                (None, b'+') => bytes.push(b' '),
-                (None, other) => bytes.push(other),
-            }
-        }
-        String::from_utf8(bytes)
-            .map_err(|_| Self::invalid_query("a query or form parameter is not UTF-8 text", None).into())
+        String::from_utf8(url_bytes(encoded)).map_err(|_| Self::not_utf8(None))
+    }
+
+    /// The refusal of a query or form component that is not UTF-8 text once
+    /// decoded, naming `parameter` when there is one to name.
+    fn not_utf8(parameter: Option<&str>) -> Refusal {
+        Self::invalid_query("a query or form parameter is not UTF-8 text", parameter).into()
     }
 
     /// Rebuild an operation's input from decoded `key=value` pairs, each
@@ -200,4 +187,34 @@ impl<R: RuntimeCodes> Runtime<R> {
         let response: ApiResponse<NoData> = failure(vec![error]);
         response.into_response()
     }
+}
+
+/// One `application/x-www-form-urlencoded` component decoded to its bytes:
+/// `+` is a space, `%XX` the byte it names (in either case), and a `%` without
+/// two hex digits after it itself.
+fn url_bytes(encoded: &[u8]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(encoded.len());
+    let mut rest = encoded;
+    while let [first, tail @ ..] = rest {
+        rest = tail;
+        let escaped = match (*first, tail) {
+            (b'%', [high, low, after @ ..]) if high.is_ascii_hexdigit() && low.is_ascii_hexdigit() => {
+                let digits = [*high, *low];
+                let byte = std::str::from_utf8(&digits)
+                    .ok()
+                    .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+                byte.map(|byte| (byte, after))
+            }
+            _ => None,
+        };
+        match (escaped, *first) {
+            (Some((byte, after)), _) => {
+                bytes.push(byte);
+                rest = after;
+            }
+            (None, b'+') => bytes.push(b' '),
+            (None, other) => bytes.push(other),
+        }
+    }
+    bytes
 }

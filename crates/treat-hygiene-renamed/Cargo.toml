@@ -6,14 +6,29 @@ rust-version.workspace = true
 version.workspace = true
 publish = false
 
-# Compile-only regression crate: the facade is depended on under a DIFFERENT name
+# Regression crate: the facade is depended on under a DIFFERENT name
 # (`envelope`), so generated code that hardcodes `treat::` fails to compile here.
 # Lives apart from `treat-hygiene` because cargo forbids depending on one path
-# crate under two names.
+# crate under two names. The library is compile-only; one runtime test (see
+# `[dev-dependencies]`) needs a dependant without a `telemetry` feature, which
+# this crate is.
 
 [dependencies]
-envelope = { package = "treat", path = "../treat", features = ["derive"] }
+# Named by a custom `RootSpanBuilder`'s signatures (`root_span!` coverage).
+actix-web = { version = "4.17", default-features = false }
+envelope = { package = "treat", path = "../treat", features = ["derive", "actix-middleware"] }
 thiserror = "2"
+tracing = "0.1"
+
+# `tests/test_root_span_otel.rs`: a custom `RootSpanBuilder` in this crate, which
+# has no `telemetry` feature of its own, still gets the OpenTelemetry parent at
+# runtime once the facade has `actix-telemetry`.
+[dev-dependencies]
+actix-web = { version = "4.17", default-features = false, features = ["macros"] }
+envelope = { package = "treat", path = "../treat", features = ["actix-telemetry"] }
+opentelemetry = "0.33"
+tracing-opentelemetry = "0.34"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry", "std"] }
 
 [lints]
 workspace = true

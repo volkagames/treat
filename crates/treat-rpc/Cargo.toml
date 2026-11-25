@@ -18,9 +18,10 @@ all-features = true
 # The reqwest client runtime. Without TLS: `reqwest` is built without its
 # default features, so an `https` URL fails when the request is sent unless
 # `rustls` (or the application's own `reqwest` feature) provides one.
-client = ["dep:http", "dep:reqwest"]
-# Mark the server's raw-body and event-stream successes `x-rpc-status: ok`, as
-# `treat-core`'s feature of the same name does for every envelope.
+client = ["dep:reqwest"]
+# Mark the server's bare (`@http(envelope: false)`), raw-body and event-stream
+# successes `x-rpc-status: ok`, as `treat-core`'s feature of the same name does
+# for every envelope.
 rpc-status-header = ["treat-core/rpc-status-header"]
 # TLS for the client: `reqwest`'s `rustls` feature (aws-lc-rs, platform
 # certificate verifier).
@@ -38,16 +39,24 @@ server = [
     "treat-core/validator",
 ]
 # Server-sent events and raw byte bodies, for whichever of `server` and
-# `client` is on.
-stream = ["dep:bytes", "dep:futures-core", "dep:futures-util", "reqwest?/stream"]
+# `client` is on. `http` is the client's alone (see below); the server has it
+# through axum already.
+stream = [
+    "dep:bytes",
+    "dep:futures-core",
+    "dep:futures-util",
+    "dep:http",
+    "reqwest?/stream",
+]
 
 [dependencies]
 axum = { version = "0.8", optional = true }
 bytes = { version = "1", optional = true }
 futures-core = { version = "0.3", optional = true }
 futures-util = { version = "0.3", default-features = false, features = ["io"], optional = true }
-# The client rebuilds a raw answer it had to read to tell it from a refusal
-# into the `reqwest::Response` it returns; `reqwest` does not re-export `http`.
+# With `client` and `stream`: the client rebuilds a raw answer it had to read
+# to tell it from a refusal into the `reqwest::Response` it returns; `reqwest`
+# does not re-export `http`. Under `stream` because Cargo cannot ask for both.
 http = { version = "1", optional = true }
 # The server tells a raw body over its limit (`413`) from one that broke off by
 # finding `LengthLimitError` among the read error's sources; axum depends on it

@@ -26,7 +26,8 @@
 //! `@http` route with the status the failure carries. Only a body that is not a
 //! usable envelope falls back to the status: [`ClientError::Status`] for a
 //! non-2xx one, such as a proxy's error page, and [`ClientError::Decode`] for a
-//! 2xx one.
+//! 2xx one. A non-2xx answer, or one declared `x-rpc-status: error`, is read
+//! only up to [`RpcClient::REFUSAL_LIMIT`]; a success is read whole.
 //!
 //! The types a generated client's callers name — [`ClientError`],
 //! [`ApiErrors`], [`ClientResult`], [`ApiResponse`], [`ErrorMessage`],
@@ -105,6 +106,14 @@ impl RpcClient {
     /// `rpc-client-rustls` (`reqwest`'s `rustls`), or depend on `reqwest` with
     /// the TLS feature you want, or pass a configured client to
     /// [`with_http`](Self::with_http).
+    ///
+    /// # Panics
+    ///
+    /// When `reqwest` cannot build its default client, as
+    /// [`reqwest::Client::new`] panics: a TLS backend that fails to
+    /// initialize, or a system configuration the resolver cannot load. A
+    /// caller that must not panic builds the client itself and handles the
+    /// error: `RpcClient::with_http(base_url, reqwest::Client::builder().build()?)`.
     pub fn new(base_url: impl Into<String>) -> Self {
         Self::with_http(base_url, reqwest::Client::new())
     }

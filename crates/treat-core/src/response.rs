@@ -29,7 +29,7 @@ pub struct ApiResponse<T: ResponseData = NoData, M: ResponseData = NoMeta> {
     pub errors: Vec<ErrorMessage>,
 }
 
-// `Serialize` is hand-written (not derived) to enforce the JSON:API envelope
+// `Serialize` is hand-written (not derived) to enforce the envelope
 // invariants, which a per-field `skip_serializing_if` cannot express because the
 // presence of `data` depends on whether `errors` is empty:
 //
@@ -60,8 +60,11 @@ impl<T: ResponseData, M: ResponseData> Serialize for ApiResponse<T, M> {
 
 /// The error-only shape of the envelope (`{ "errors": [...] }`), handy as the
 /// `body` in `#[utoipa::path(responses((status = 400, body = ErrorResponse)))]`
-/// where the generic [`ApiResponse`] would be awkward to name. Serializes
-/// identically to an [`ApiResponse`] that carries only errors.
+/// where the generic [`ApiResponse`] would be awkward to name.
+///
+/// A non-empty `ErrorResponse` serializes identically to an [`ApiResponse`]
+/// that carries only errors. Unlike `ApiResponse` it does not hide an empty
+/// list: `ErrorResponse::default()` serializes as `{"errors":[]}`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ErrorResponse {
@@ -150,6 +153,11 @@ pub fn failure<T: ResponseData, Meta: ResponseData>(
     }
 }
 
+/// Keeps only the envelope: the error's transport status
+/// ([`ApiError::status`], whether from `with_status`, `#[status]` or the
+/// `error-status-500` default) and the error itself are dropped, and an
+/// `ApiResponse` is always answered with `200`. Return the [`ApiError`] from the
+/// handler instead when the status matters.
 impl<C: ApiErrorCode> From<ApiError<C>> for ApiResponse {
     #[track_caller]
     fn from(err: ApiError<C>) -> Self {
@@ -157,6 +165,8 @@ impl<C: ApiErrorCode> From<ApiError<C>> for ApiResponse {
     }
 }
 
+/// Keeps only the envelope; see `From<ApiError<C>> for ApiResponse` — the
+/// error's transport status is not carried over.
 impl<C: ApiErrorCode> From<&ApiError<C>> for ApiResponse {
     #[track_caller]
     fn from(err: &ApiError<C>) -> Self {
@@ -164,6 +174,9 @@ impl<C: ApiErrorCode> From<&ApiError<C>> for ApiResponse {
     }
 }
 
+/// Data or errors in one envelope. Like `From<ApiError<C>> for ApiResponse`,
+/// the error's transport status is dropped and the response is answered with
+/// `200`; return the `Result` itself from the handler when the status matters.
 impl<T: ResponseData, C: ApiErrorCode> From<std::result::Result<T, ApiError<C>>> for ApiResponse<T, NoMeta> {
     #[track_caller]
     fn from(res: std::result::Result<T, ApiError<C>>) -> Self {

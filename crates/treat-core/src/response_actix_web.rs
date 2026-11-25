@@ -1,12 +1,13 @@
 use crate::{ApiResponse, ResponseData};
 use actix_web::body::BoxBody;
 use actix_web::{HttpRequest, HttpResponse, Responder};
-use std::fmt::Debug;
 
+// Only `Serialize` (via `ResponseData`) is needed to write the body, as in the
+// axum and poem adapters; no `Debug` bound.
 impl<T, Meta> Responder for ApiResponse<T, Meta>
 where
-    T: Debug + ResponseData,
-    Meta: Debug + ResponseData,
+    T: ResponseData,
+    Meta: ResponseData,
 {
     type Body = BoxBody;
 

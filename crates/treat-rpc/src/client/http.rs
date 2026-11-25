@@ -19,6 +19,15 @@ impl RpcClient {
     /// field is spelled in the path, a query string or a form body: a
     /// JSON-typed field as JSON text, and only a list by repeating its key.
     ///
+    /// Under a method that carries no body (`GET`, `DELETE`) a
+    /// [`HttpBodyKind::Form`] input goes in the query string instead: the
+    /// server reads a form operation's query string under the same table, so
+    /// it reads the same input, and the request keeps to what HTTP defines
+    /// for those methods. A [`HttpBodyKind::Json`] input is still the JSON
+    /// body there: the server reads it, and its query-string fallback for a
+    /// body-less call reads only the fields the table names, so moving the
+    /// input to the URL could drop some.
+    ///
     /// A success is read as the envelope or, with `spec.envelope` false, as
     /// the value itself. A failure is the envelope either way, under the status
     /// the failure carries — `errors[]` decides, so a status the service chose
@@ -42,11 +51,12 @@ impl RpcClient {
         let method = reqwest::Method::from_bytes(spec.request_method().as_str().as_bytes())
             .map_err(|e| ClientError::Encode(e.to_string()))?;
 
+        // `GET` and `DELETE`: the methods under which the server reads a JSON
+        // operation called without a body from its query string.
+        let bodiless = HttpBodyKind::default_for(spec.request_method()) == HttpBodyKind::None;
         let request = match spec.body {
-            HttpBodyKind::None => {
-                let query = to_query(input, spec.fields).map_err(ClientError::Encode)?;
-                self.http.request(method, format!("{url}{query}"))
-            }
+            HttpBodyKind::None => self.query_request(method, &url, input, spec)?,
+            HttpBodyKind::Form if bodiless => self.query_request(method, &url, input, spec)?,
             HttpBodyKind::Json => json_body(self.http.request(method, url), &input)?,
             HttpBodyKind::Form => {
                 let form = form_pairs(input, spec.fields).map_err(ClientError::Encode)?;
@@ -58,5 +68,18 @@ impl RpcClient {
         };
         let response = send(request).await?;
         receive(response, spec.envelope).await
+    }
+
+    /// A request to `url` carrying `input` in its query string, spelled as
+    /// `spec.fields` says.
+    fn query_request<C>(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        input: serde_json::Map<String, serde_json::Value>,
+        spec: &HttpSpec,
+    ) -> Result<reqwest::RequestBuilder, ClientError<C>> {
+        let query = to_query(input, spec.fields).map_err(ClientError::Encode)?;
+        Ok(self.http.request(method, format!("{url}{query}")))
     }
 }

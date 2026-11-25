@@ -59,11 +59,15 @@ variant implements `Undeclared`.
 `&Code` still works). `ALL`, `from_name` and `as_str` are trait items, so a
 caller needs `treat::rpc::WireEnum` in scope.
 
-`as_str`, serde and `Display` write one string:
-`ApiErrorCode`'s `Display` reads `#[code]`, serde's name and the identifier in
-the same order, so a variant serde renames needs no `#[code]`. serde's
-`alias`, `other` and `skip_*` are not mirrored — `from_name` accepts the wire
-names only, and `ALL` lists every variant.
+`as_str` and `Display` always write one string: `ApiErrorCode`'s `Display`
+reads `#[code]`, serde's name and the identifier in the same order, so a
+variant serde renames needs no `#[code]`. serde agrees with them wherever it is
+told a name (`rename`, `rename_all`) or neither is spelled. A `#[code]` serde
+is not told about is still the wire name, while serde keeps writing the
+identifier (`#[code("things::gone")] ThingsGone` serializes as
+`"ThingsGone"`): add a matching `#[serde(rename)]` if the enum also travels as
+a payload. serde's `alias`, `other` and `skip_*` are not mirrored —
+`from_name` accepts the wire names only, and `ALL` lists every variant.
 
 ## Narrowing a failure
 
@@ -92,9 +96,12 @@ codes are `invalid_body` and `internal_error`.
 `treat::rpc::route::by_route(rows, method, path)` finds the operation the router
 mounts at a request: over any table of rows implementing `RouteRow`, sorted by
 path and then method. It picks the route as the router does — a fixed segment
-before a `{param}` — and only then the method, so a method the chosen route
-lacks is `None` (the router's `405`) even where another route would fit. `ANY`
-answers every method; `HEAD` is not `GET`; a trailing slash is another path.
+before a `{param}` or a `{*rest}`; a `{param}` takes one non-empty segment, and
+a catch-all `{*rest}`, last in its route, the non-empty rest of the path — and
+only then the method, so a method the chosen route lacks is `None` (the
+router's `405`) even where another route would fit. `ANY` answers every
+method; `HEAD` is not `GET`; a trailing slash is another path (except inside a
+catch-all's rest).
 
 The lookup trusts the table's order instead of checking it per request. Check it
 once, in a test of the code that owns the table:
@@ -199,11 +206,16 @@ async fn ingest<S: UsersService>(State(service): State<S>, raw: RawRequest) -> R
 An `@http` operation's `HttpSpec` holds its route, its field table (how each
 field is spelled in a query string, a form body or a path), which path
 segments are input fields, where the rest travel and whether a success is the
-envelope. `http_input` reads the path parameters first and lets them win over
+envelope. A field the table names is read from a query string or a form as
+the table types it, and one it leaves out is not read at all; a `list` field
+nobody sent — an empty list included, which the client does not send — is left
+out of the input, so it needs `#[serde(default)]` like any optional field.
+`http_input` reads the path parameters first and lets them win over
 any other field of the same name; each is typed as its table entry says, and
 one the table leaves out is read as a string, whatever the body kind. A form
 body is read only when the `Content-Type`'s media type is exactly
-`application/x-www-form-urlencoded` (any case, any parameters). `respond_http`
+`application/x-www-form-urlencoded` (any case, any parameters); the query
+string is read either way, and the body wins per field. `respond_http`
 answers an enveloped operation as `respond` does — the service returns an
 `ApiResponse` — and a bare one as `respond_bare`: the value itself, and a
 failure at any `2xx` (or `1xx`) status at `500`, since only the status tells
@@ -226,9 +238,9 @@ refused, even where the registry's `Display` differs:
 | body under a `Content-Type` the operation does not declare (with `source.header`) | — | `415` | — |
 | body over the router's `DefaultBodyLimit` | `413` | — | `413` |
 | buffered body over `raw_body`'s limit (`RAW_BODY_LIMIT`) | — | `413` | — |
-| buffered body that broke off while being read | — | `200` | — |
+| body that broke off while being read (the connection dropped) | `400` | `200` (buffered) | `400` |
 | JSON body that does not parse (with a `source.pointer`) | `422` | — | `400` |
-| query string, form or path that does not read (with a `source.parameter`) | `200` | `200` | `400` |
+| query string, form or path that does not read (with a `source.parameter`, see below) | `200` | `200` | `400` |
 | an input breaking a `validator` rule (with a `source.pointer`) | `200` | `200` | `400` |
 
 A value read from a query string, a form or a path is named in
@@ -236,7 +248,14 @@ A value read from a query string, a form or a path is named in
 for an `Int`) or serde refuses it as the field's type (`id=not-a-uuid` for a
 `Uuid`, `limit=300` for a `u8`): the parameter is the top-level key the failure
 lies under, also when it lies inside a `Json` field's value or a list's item.
-A missing required field names none.
+A query or form value that is not UTF-8 once decoded (`name=caf%E9`) names its
+key too. Some refusals name none: a missing required field, a query or form
+key that is not UTF-8 itself, and any path refusal from axum — a path
+parameter that is not UTF-8 once decoded, or an operation with path fields run
+outside a router's matched route (a `route_service`, a test's `oneshot`).
+axum refuses such a path as a whole and does not hand the runtime a
+parameter's name; what it says is only in the message the refusal carries
+(`Invalid UTF-8 in ...`).
 
 An RPC route leaves the rest at the envelope's status, since its callers read
 `errors[]`; an `@http` route answers a context refusal `401`, an access check's
@@ -282,6 +301,14 @@ name listed twice (`Set-Cookie`) is sent twice; `content-type`,
 the outcome. With `rpc-status-header`, bare, raw and event-stream successes
 carry `x-rpc-status: ok` like every successful envelope.
 
+`Rt::respond_events` / `sse_response` write each event as one JSON `data:`
+frame. An event that does not serialize as JSON ends the stream there: the
+answer is already committed to `200`, so the body fails and the connection
+drops, which the client reports as `StreamError::Transport` after the events
+before it (or `ClientError::Transport` if no byte of the answer had gone out
+yet). The runtime has no logger; a service whose events can fail to serialize
+turns them into JSON itself, and logs and skips the ones that do not.
+
 ## Client (`rpc-client`)
 
 A generated client is `pub struct ApiClient(RpcClient)` with an accessor per
@@ -300,8 +327,13 @@ service, and each method is one call:
 `@http`, the spec's `fields`): a field of kind `Json` travels as JSON text (the
 string `abc` as `"abc"`), only a `list` field repeats its key, and a non-list
 array is one JSON-text value. A list of another kind cannot spell a `null`
-item, so one is `Encode` rather than the text `null`. An operation without an
-input passes `NoInput`, which serializes as `{}`. Every JSON body goes with
+item, so one is `Encode` rather than the text `null`. A `null` value and an
+empty list are not sent at all — a repeated key has no spelling for zero
+items — and the server leaves an absent parameter out of the input it
+rebuilds, so every `list` field of an input that travels in the URL (a query
+string, a form body) needs `#[serde(default)]` on the server's input type, or
+an empty list is refused as a missing field (an `Option` list reads back as
+`None`). An operation without an input passes `NoInput`, which serializes as `{}`. Every JSON body goes with
 `Content-Type: application/json`; a raw body with the `content_type` the caller
 passes, which must be one the operation declares.
 
@@ -310,7 +342,11 @@ without a body and `POST` when it travels in one (`HttpSpec::request_method`)
 — to its path, with each `path_fields` entry filled from the input and removed
 from it, the rest travelling as `body` says. A `list` field in the path is its
 one item, spelled as that item's kind, which is how the server reads it back;
-an array of any other length is `Encode`.
+an array of any other length is `Encode`. Under `GET` or `DELETE` a `Form`
+input goes in the query string, which the server reads under the same table,
+rather than in a body those methods do not define; a `Json` input stays the
+JSON body, which the server reads under any method (its query-string fallback
+reads only the fields the table names, so the client does not rely on it).
 
 An envelope's `data` is handed to the declared type whatever it holds,
 `null` included: a server answers an operation that returns `()`, `None` or a
@@ -338,8 +374,13 @@ A failure is `ClientError<C>`, `C` the operation's code set:
 
 How a refusal is told from a success where the success is not the envelope:
 
-- an `x-rpc-status` header (`treat`'s `rpc-status-header` on the server)
-  decides when present: `error` is a refusal, `ok` a success;
+- `x-rpc-status: error` (`treat`'s `rpc-status-header` on the server) makes
+  any answer a refusal, whatever its status: an envelope carrying `data`
+  instead of `errors[]` is then no answer (`Decode`, or `Status` off `2xx`),
+  not a success. `ok` decides less: it lets a `2xx` raw answer through as its
+  bytes without the peek below, and changes nothing else — a raw answer under
+  another status is still a refusal, a subscription still opens only on an
+  event stream, and an envelope's `errors[]` is still `Api`;
 - a subscription opens only on a `2xx` `text/event-stream` answer; anything
   else is read as a refusal, so a proxy's page is `Decode` rather than an empty
   stream;
@@ -353,8 +394,11 @@ How a refusal is told from a success where the success is not the envelope:
   that peek.
 - an answer read as a refusal (any non-`2xx` one, `x-rpc-status: error`, a
   subscription answered without an event stream) is read up to
-  `RpcClient::REFUSAL_LIMIT` (1 MiB); one going past it is `Decode` under a
-  `2xx` status and `Status` under any other, the rest left unread.
+  `RpcClient::REFUSAL_LIMIT` (1 MiB) by every method, `call` and `call_http`
+  included; one going past it is `Decode` under a `2xx` status and `Status`
+  under any other, the rest left unread. A success is not bounded: a `2xx`
+  envelope or bare value not declared `error` is the operation's answer, and
+  `call` and `call_http` read it whole.
 
 The SSE reader follows the specification's line rules (`\r`, `\n`, `\r\n`,
 split anywhere between chunks; a `data` line without a colon; a leading byte

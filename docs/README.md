@@ -11,13 +11,13 @@ solve real problems in an application. For the API reference see
 ## Contents
 
 1. [Getting started](getting-started.md) — install, features, your first handler.
-2. [Errors](errors.md) — the error model: codes, source chains, verbose mode, tracking.
-3. [Responses](responses.md) — the envelope, `meta`, pagination, reading responses.
-4. [Derive macros](derives.md) — `ApiError`, `ApiErrorCode`, `FromErrorMessage`.
-5. [Framework integration](frameworks.md) — actix-web, axum, poem, request extractors, and observability middleware.
+2. [Errors](errors.md) — the error model: codes, locators, source chains, verbose mode, tracking, span traces, HTTP status.
+3. [Responses](responses.md) — the envelope, `meta`, pagination, reading responses, the `X-RPC-Status` header, OpenAPI.
+4. [Derive macros](derives.md) — `ApiError`, `ApiErrorCode`, `FromErrorMessage`, and the RPC `WireEnum`.
+5. [Framework integration](frameworks.md) — actix-web, axum, poem, request extractors, observability and error-logging middleware.
 6. [Cookbook](cookbook.md) — tricks & problem → solution recipes.
 7. [Troubleshooting](troubleshooting.md) — common errors and how to fix them.
-8. [RPC runtime](rpc.md) — `treat::rpc`, the runtime generated RPC code links against.
+8. [RPC runtime](rpc.md) — `treat::rpc`, the axum server and reqwest client runtime generated RPC code links against.
 
 ## The one-minute version
 
@@ -41,6 +41,7 @@ async fn get_user(id: u64) -> Result<ApiResponse<User>, ApiError> {
 
 That pattern is fine, but you re-implement the envelope, the error-to-JSON
 mapping and the observability glue in every service. `treat` gives you one
-envelope, typed codes with derives, request extractors, and drop-in actix/tower
-middleware for request ids, tracing root spans, and OpenTelemetry. See the
-[cookbook](cookbook.md) for what that buys you day to day.
+envelope, typed codes with derives, request extractors, and drop-in actix-web
+and tower (axum) middleware for request ids, tracing root spans, and
+OpenTelemetry. See the [cookbook](cookbook.md) for what that buys you day to
+day.

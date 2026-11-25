@@ -65,17 +65,6 @@ impl RpcClient {
     /// before the caller sees any of it.
     pub const RAW_PEEK_LIMIT: usize = 64 << 10;
 
-    /// The most bytes read of an answer that is not the one the operation
-    /// sends on success — a status other than `2xx`, `x-rpc-status: error`, a
-    /// subscription answered with something other than an event stream — to
-    /// find the refusal in it: 1 MiB.
-    ///
-    /// A refusal is a short envelope, so a body still going past this is none:
-    /// [`ClientError::Decode`] under a `2xx` status, [`ClientError::Status`]
-    /// under any other, without reading the rest. Bounded so a misrouted URL
-    /// answering a large download costs no more than this.
-    pub const REFUSAL_LIMIT: usize = 1 << 20;
-
     /// Open a subscription over Server-Sent Events.
     ///
     /// `EventSource` semantics without `EventSource`: the input travels in the

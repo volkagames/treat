@@ -40,6 +40,8 @@ impl FromRequest for RootSpan {
     }
 }
 
+/// The [`RootSpan`] extractor's rejection: the request did not pass through the
+/// [`Logger`](crate::Logger). See its [`ResponseError`] impl for the response.
 #[derive(Debug)]
 pub struct RootSpanExtractionError {
     // It turns out that a unit struct has a public constructor!
@@ -51,7 +53,21 @@ pub struct RootSpanExtractionError {
     _priv: (),
 }
 
-impl ResponseError for RootSpanExtractionError {}
+/// Rendered as a `treat` envelope with code `root_span_unavailable` and status `500`, like
+/// any other `ApiError`: the extractor ran without the [`Logger`](crate::Logger)
+/// in front of it, which is a wiring bug of the service, not a client error.
+impl ResponseError for RootSpanExtractionError {
+    fn status_code(&self) -> actix_web::http::StatusCode {
+        actix_web::http::StatusCode::INTERNAL_SERVER_ERROR
+    }
+
+    fn error_response(&self) -> actix_web::HttpResponse {
+        treat_core::error("root_span_unavailable")
+            .with_message(self.to_string())
+            .with_status(500)
+            .error_response()
+    }
+}
 
 impl std::fmt::Display for RootSpanExtractionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

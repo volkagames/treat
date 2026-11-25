@@ -1,6 +1,6 @@
 //! G2: the `ApiJson<T>` / `ApiValidated<T>` request extractors for axum and
 //! actix report parse and validation failures in the `treat` envelope.
-#![cfg(feature = "serde-path")]
+#![cfg(all(feature = "serde-path", any(feature = "axum", feature = "actix")))]
 
 use serde::Deserialize;
 use treat::ApiResponse;

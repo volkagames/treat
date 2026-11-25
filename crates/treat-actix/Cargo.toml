@@ -23,5 +23,9 @@ tracing-opentelemetry = { version = "0.34", optional = true }
 treat-core = { workspace = true, features = ["actix"] }
 uuid = { version = "1", features = ["v4"] }
 
+[dev-dependencies]
+# `registry` for the subscriber the OpenTelemetry test layers stack on.
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry", "std"] }
+
 [lints]
 workspace = true

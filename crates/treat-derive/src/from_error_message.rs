@@ -22,6 +22,11 @@ pub fn impl_from_error_message(input: &DeriveInput) -> syn::Result<TokenStream2>
     let mut concrete_arms: Vec<TokenStream2> = Vec::new();
     let mut catch_all_arm: Option<TokenStream2> = None;
     let mut catch_all_span: Option<proc_macro2::Span> = None;
+    // Each concrete code with the variant that claimed it first. A second
+    // variant with the same code would be an unreachable arm, and rustc
+    // suppresses `unreachable_patterns` on macro spans, so it is refused here.
+    let mut seen_codes: Vec<(String, &syn::Ident)> = Vec::new();
+    let mut duplicates: Option<syn::Error> = None;
 
     for variant in variants {
         let ident = &variant.ident;
@@ -43,8 +48,34 @@ pub fn impl_from_error_message(input: &DeriveInput) -> syn::Result<TokenStream2>
             catch_all_span = Some(variant.span());
             catch_all_arm = Some(quote! { _ => #construct, });
         } else {
-            concrete_arms.push(quote! { #code => #construct, });
+            let first = seen_codes
+                .iter()
+                .find(|(seen, _)| *seen == code)
+                .map(|(_, first)| *first);
+            match first {
+                Some(first) => {
+                    let mut error = syn::Error::new(
+                        variant.span(),
+                        format!("#[code(\"{code}\")] is already used by `{first}`; each code may map to one variant"),
+                    );
+                    error.combine(syn::Error::new(
+                        first.span(),
+                        format!("`{first}` declares #[code(\"{code}\")] here"),
+                    ));
+                    match duplicates.as_mut() {
+                        Some(errors) => errors.combine(error),
+                        None => duplicates = Some(error),
+                    }
+                }
+                None => {
+                    seen_codes.push((code.clone(), ident));
+                    concrete_arms.push(quote! { #code => #construct, });
+                }
+            }
         }
+    }
+    if let Some(errors) = duplicates {
+        return Err(errors);
     }
 
     let Some(catch_all_arm) = catch_all_arm else {
@@ -61,8 +92,29 @@ pub fn impl_from_error_message(input: &DeriveInput) -> syn::Result<TokenStream2>
 
     let treat = crate::runtime_path();
 
+    // A generic enum keeps its own bounds; each variant's field is built with
+    // `Into::into(ErrorMessage)`, so a field whose type is generic must be one
+    // an `ErrorMessage` converts into. Only a generic enum gets the bounds, so a
+    // concrete one keeps its errors where they were.
+    let generics = match input.generics.params.is_empty() {
+        true => input.generics.clone(),
+        false => {
+            let field_types = variants
+                .iter()
+                .flat_map(|variant| variant.fields.iter())
+                .map(|field| &field.ty);
+            let bounds = field_types.map(|ty| -> syn::WherePredicate {
+                syn::parse_quote! { #ty: ::core::convert::From<#treat::ErrorMessage> }
+            });
+            crate::with_predicates(&input.generics, bounds)
+        }
+    };
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let this = quote! { #enum_name #ty_generics };
+    let api_error = quote! { #treat::ApiError<&'static ::core::primitive::str> };
+
     Ok(quote! {
-        impl ::core::convert::From<#treat::ErrorMessage> for #enum_name {
+        impl #impl_generics ::core::convert::From<#treat::ErrorMessage> for #this #where_clause {
             #[track_caller]
             fn from(err: #treat::ErrorMessage) -> Self {
                 match err.code.as_str() {
@@ -71,7 +123,7 @@ pub fn impl_from_error_message(input: &DeriveInput) -> syn::Result<TokenStream2>
             }
         }
 
-        impl ::core::convert::From<&#treat::ErrorMessage> for #enum_name {
+        impl #impl_generics ::core::convert::From<&#treat::ErrorMessage> for #this #where_clause {
             #[track_caller]
             fn from(err: &#treat::ErrorMessage) -> Self {
                 match err.code.as_str() {
@@ -80,18 +132,18 @@ pub fn impl_from_error_message(input: &DeriveInput) -> syn::Result<TokenStream2>
             }
         }
 
-        impl ::core::convert::From<#treat::ApiError<&'static ::core::primitive::str>> for #enum_name {
+        impl #impl_generics ::core::convert::From<#api_error> for #this #where_clause {
             #[track_caller]
-            fn from(err: #treat::ApiError<&'static ::core::primitive::str>) -> Self {
+            fn from(err: #api_error) -> Self {
                 match *err.code() {
                     #arms
                 }
             }
         }
 
-        impl ::core::convert::From<&#treat::ApiError<&'static ::core::primitive::str>> for #enum_name {
+        impl #impl_generics ::core::convert::From<&#api_error> for #this #where_clause {
             #[track_caller]
-            fn from(err: &#treat::ApiError<&'static ::core::primitive::str>) -> Self {
+            fn from(err: &#api_error) -> Self {
                 match *err.code() {
                     #arms
                 }

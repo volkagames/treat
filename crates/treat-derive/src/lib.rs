@@ -6,6 +6,8 @@ mod api_error;
 mod api_error_code;
 mod from_error_message;
 mod serde_name;
+#[cfg(test)]
+mod tests;
 mod wire_enum;
 
 use from_error_message::impl_from_error_message;
@@ -50,6 +52,11 @@ fn runtime_path() -> proc_macro2::TokenStream {
 /// `From<ApiError>` and `From<&ApiError>`. Ideal on the client side after
 /// deserializing a response.
 ///
+/// Every variant needs a `#[code]`, exactly one is the `#[code("_")]`
+/// catch-all, and a concrete code may be claimed by one variant only; the
+/// build fails otherwise. A generic enum is supported: each field type must
+/// then be `From<ErrorMessage>`, which the impls require.
+///
 /// ```ignore
 /// use treat::prelude::*;
 ///
@@ -73,10 +80,15 @@ pub fn from_error_message(input: TokenStream) -> TokenStream {
 
 /// Map an existing (e.g. `thiserror`) enum onto `ApiError<&'static str>`.
 ///
-/// Tag each variant with `#[code("...")]`; the variant's `Display` becomes the
-/// error message. Mark exactly one tuple variant `#[catch_all]` — it must hold
-/// an `erris::Report` and also gets a `From<erris::Report>` impl, so `?` on a
-/// report produces your enum. Generates `From<YourEnum> for ApiError`.
+/// Tag every variant with `#[code("...")]` (a variant without one fails the
+/// build, naming the variant); the variant's `Display` becomes the error
+/// message. Optionally mark at most one variant `#[catch_all]` — a tuple
+/// variant with exactly one field, an `erris::Report` — and it also gets a
+/// `From<erris::Report>` impl, so `?` on a report produces your enum. Generates
+/// `From<YourEnum> for ApiError`.
+///
+/// A generic enum is supported; the conversion requires `YourEnum<..>:
+/// Display`, so it exists wherever the `thiserror` impl does.
 ///
 /// Add `#[status(404)]` to carry a transport HTTP status alongside the code; the
 /// generated conversion applies it, so the adapters return it without the call
@@ -128,6 +140,15 @@ pub fn derive_api_error(input: TokenStream) -> TokenStream {
 /// variant carries one, so `with_code_status()` works too; variants without the
 /// attribute report the crate default.
 ///
+/// A message binds only the fields it reads, so a variant whose message skips
+/// a field raises no `unused_variables` warning. A field that neither the
+/// message nor any other code reads is then reported by `dead_code` when the
+/// enum is not public (a derived `Debug` is not a read): read it, drop it, or
+/// put `#[allow(dead_code)]` on that field. A generic enum is supported:
+/// the conversion into `ApiError<YourEnum<..>>` requires `YourEnum<..>` to be a
+/// `'static` `ApiErrorCode`, so put the bounds a message needs (`T: Display`)
+/// on the enum.
+///
 /// ```ignore
 /// use treat::prelude::*;
 ///
@@ -166,19 +187,22 @@ pub fn derive_api_error_code(input: TokenStream) -> TokenStream {
 /// 3. the identifier, a raw one unprefixed (`r#type` is `type`), as serde
 ///    writes it.
 ///
-/// When `#[code]` and serde both name the variant they must agree — the build
-/// fails otherwise, since the value would read one way in an error envelope and
-/// another in a JSON payload. Two variants with one wire name fail too, and so
-/// does a variant serde would write and read under different names
-/// (`serialize` / `deserialize` halves of `rename` or `rename_all` that
-/// differ, where the variant does not spell its own name).
+/// When `#[code]` and a serde `rename` / `rename_all` both name the variant
+/// they must agree — the build fails otherwise, since the value would read one
+/// way in an error envelope and another in a JSON payload. Two variants with
+/// one wire name fail too, and so does a variant serde would write and read
+/// under different names (`serialize` / `deserialize` halves of `rename` or
+/// `rename_all` that differ, where the variant does not spell its own name).
 ///
 /// Only those keys are read. `#[serde(alias)]`, `#[serde(other)]` and
 /// `#[serde(skip_*)]` are not mirrored: `from_name` accepts exactly the wire
 /// names, and `ALL` lists every variant, skipped or not. `ApiErrorCode`'s
 /// `Display` reads `#[code]`, serde's `rename` / `rename_all` and the
-/// identifier in the same order, so `Display`, `as_str` and serde write one
-/// string.
+/// identifier in the same order, so `Display` and `as_str` always write one
+/// string, and serde writes it too wherever serde is told a name. A `#[code]`
+/// serde is not told about is the wire name, while serde still writes the
+/// identifier: add a matching `#[serde(rename)]` if the enum also travels as a
+/// payload.
 ///
 /// Mark one variant `#[undeclared]` to also implement `treat::rpc::Undeclared`:
 /// the value `Narrow::narrow` reports a code the set does not declare as.
@@ -201,6 +225,27 @@ pub fn derive_wire_enum(input: TokenStream) -> TokenStream {
     wire_enum::derive(&input)
         .unwrap_or_else(|err| err.to_compile_error())
         .into()
+}
+
+/// `generics` with `predicates` added to its `where` clause.
+///
+/// The derives use it to bound a generic enum's impls on what the generated
+/// code needs, so an impl exists exactly for the instantiations that satisfy it.
+fn with_predicates(
+    generics: &syn::Generics,
+    predicates: impl IntoIterator<Item = syn::WherePredicate>,
+) -> syn::Generics {
+    let mut generics = generics.clone();
+    generics.make_where_clause().predicates.extend(predicates);
+    generics
+}
+
+/// `generics` with `params` appended. The enum's own lifetimes stay first, as
+/// Rust requires of a parameter list.
+fn with_type_params(generics: &syn::Generics, params: impl IntoIterator<Item = syn::GenericParam>) -> syn::Generics {
+    let mut generics = generics.clone();
+    generics.params.extend(params);
+    generics
 }
 
 /// Read a string-literal attribute (`#[code("...")]` / `#[message("...")]`).

@@ -2,14 +2,17 @@
 
 `ApiError<C>` is the heart of the crate. It carries:
 
-| Part                      | Type                            | Purpose                                  |
-| ------------------------- | ------------------------------- | ---------------------------------------- |
-| `code`                    | `C` (`&'static str` by default) | machine-readable, what clients branch on |
-| `message`                 | `Option<Cow<str>>`              | human-readable detail                    |
-| `meta`                    | `Option<Map<String, Value>>`    | structured context, always a JSON object |
-| `source`                  | `Option<erris::Report>`         | the underlying cause chain               |
-| `location`                | `&'static Location`             | where it was raised (`#[track_caller]`)  |
-| `spantrace` / `backtrace` | optional                        | captured under the matching feature      |
+| Part                      | Type                               | Purpose                                                  |
+| ------------------------- | ---------------------------------- | -------------------------------------------------------- |
+| `code`                    | `C` (`&'static str` by default)    | machine-readable, what clients branch on                 |
+| `message`                 | `Option<Cow<str>>`                 | human-readable detail                                    |
+| `meta`                    | `Option<Map<String, Value>>`       | structured context, always a JSON object                 |
+| `source`                  | `Option<Arc<erris::Report>>`       | the underlying cause chain; `source()` gives `Option<&Report>` |
+| locator, `type`, `instance` | `Option<ErrorSource>`, `Option<..>` | where the error is, Problem-Details interop            |
+| `status`                  | `Option<u16>`                      | transport HTTP status; not serialized                    |
+| `location`                | `&'static Location`                | where it was raised (`#[track_caller]`)                  |
+| `hops`                    | `Vec<&'static Location>`           | where `track()` saw it on the way up                     |
+| `spantrace` / `backtrace` | optional                           | captured under the matching feature                      |
 
 ## Creating errors
 
@@ -23,8 +26,11 @@ let err = treat::error("payment_failed")
     .with_error(erris::report!("gateway timeout"));
 ```
 
-Every constructor and builder is `#[track_caller]`, so `location` points at _your_
-call site, not inside the library.
+`location` is captured once, when the error is created. The constructors below,
+the `?`-extensions (`ok_or_api_error`, `wrap_api_error`, `with_error_code`, ...)
+and the derives' `From` impls are `#[track_caller]`, so it points at _your_ call
+site, not inside the library. The builders do not move it — the raise site stays
+the raise site; `track()` records later stops as hops.
 
 - `error(code)` — bare error.
 - `error_and_message(code, msg)` — code + message.
@@ -32,11 +38,16 @@ call site, not inside the library.
 
 Builders (chainable, take `self`): `with_message`, `with_meta`, `with_verbose`,
 `with_source`, `with_error` (alias for `with_source` that accepts anything
-`Into<Report>`), `track`, plus the locators below (`with_pointer`,
-`with_parameter`, `with_header`, `with_type`, `with_instance`).
+`Into<Report>`), `track`, the status setters `with_status`, `with_code_status`
+and `with_source_status` (see [HTTP status](#http-status)), the locators below
+(`with_pointer`, `with_parameter`, `with_header`, or `with_error_source` to set
+the whole `ErrorSource` at once, plus `with_type`, `with_instance`), and
+`map_code` (see [below](#re-reporting-under-another-code)).
 
 Accessors (read-only): `code()`, `message()`, `meta()`, `source()`, `is_verbose()`,
-`error_source()`, `type_uri()`, `instance()`.
+`error_source()`, `type_uri()`, `instance()`, `status()`, `has_status()`,
+`hops()`. The raise location is read through the `ApiErrorHandler` trait, which
+is not in the prelude: `use treat::ApiErrorHandler;` then `err.location()`.
 
 > Fields are private on purpose. Mutate through `with_*`, read through the
 > accessors — this keeps `location` and the source chain tamper-proof.
@@ -128,6 +139,49 @@ use treat::erris;
 let err = erris::report!("disk full").with_error_code("storage_error");
 ```
 
+### Picking up the code's declared message and status
+
+The conversions above build the error straight from the code, so a
+`#[message(...)]` or `#[status(...)]` declared on an
+[`ApiErrorCode`](derives.md#apierrorcode--typed-error-codes) variant is **not**
+applied. Each has a counterpart that goes through `From<C> for ApiError<C>` (the
+impl the derive generates), so the declared message and status come along:
+
+| Builds from the code alone      | Applies `#[message]` / `#[status]`            |
+| ------------------------------- | --------------------------------------------- |
+| `option.ok_or_api_error(code)`  | `option.ok_or_api_code(code)`                 |
+| `result.wrap_api_error(code)`   | `result.wrap_api_code(code)`                  |
+| —                               | `result.wrap_api_error_default()` (`C::default()`) |
+| `report.with_error_code(code)`  | `report.with_api_code(code)`                  |
+| —                               | `report.with_api_default_code()` (`C::default()`) |
+
+```rust
+use treat::prelude::*;
+
+#[derive(Clone, Debug, Default, ApiErrorCode)]
+enum Code {
+    #[default]
+    #[code("internal")]
+    #[message("the request could not be completed")]
+    #[status(500)]
+    Internal,
+    #[code("not_found")]
+    #[message("no such user")]
+    #[status(404)]
+    NotFound,
+}
+
+let missing: Option<u32> = None;
+let err = missing.ok_or_api_code(Code::NotFound).expect_err("absent");
+assert_eq!(err.message().map(|m| m.as_ref()), Some("no such user"));
+assert_eq!(err.status(), 404);
+
+let failed: Result<(), std::io::Error> = Err(std::io::Error::other("disk"));
+let err: ApiError<Code> = failed.wrap_api_error_default().expect_err("wrapped");
+assert_eq!(err.status(), 500);
+assert!(err.source().is_some(), "the io error is kept as the source");
+```
+
 ## The source chain
 
 `with_source` / `with_error` accumulate causes. `wrap_api_error` stores the
@@ -211,15 +265,49 @@ location, `hops()` returns them, and the axum loggers write them to `error_hops`
 
 ```rust
 use treat::prelude::*;
-# fn inner() -> Result<(), ApiError> { Err(treat::error("boom")) }
+fn inner() -> Result<(), ApiError> { Err(treat::error("boom")) }
 fn outer() -> Result<(), ApiError> {
     inner().track_api_error()?; // records this hop
     Ok(())
 }
+assert_eq!(outer().expect_err("boom").hops().len(), 1);
 ```
 
 A hop is not a cause: `source()` and the verbose message stay as they were, so a
 tracked business error is still logged at `debug!` by `error_log`.
+
+`track_api_response()` (`ApiResponseTrack`, in the prelude) turns any fallible
+call into a handler result in one step: `Ok(v)` becomes `success(v)`, and an
+error becomes `C::default()` with the original error kept as the source:
+
+```rust
+use treat::prelude::*;
+
+#[derive(Clone, Debug, Default, ApiErrorCode)]
+enum Code {
+    #[default]
+    #[code("internal")]
+    Internal,
+}
+
+fn handler() -> Result<ApiResponse<u16>, ApiError<Code>> {
+    "80".parse::<u16>().track_api_response()
+}
+assert_eq!(handler().expect("parsed").data, Some(80));
+```
+
+It builds the error from the code alone, like `wrap_api_error`; use
+`wrap_api_error_default()` and `success` when the code's `#[message]` /
+`#[status]` should apply.
+
+### The `tracked` feature (nightly)
+
+With `tracked`, erris's nightly tracking mode is on: an `ApiError` can be the
+error of an `erris::Result<T, ApiError<C>>`, every `?` records its hop as
+`track()` would (a `?` on the line the error was raised on adds none), the
+`WrapApiError` / `ApiResponseTrack` extensions work on `erris::TrackedResult`,
+and with `axum` such a result is an axum response. It changes `erris::Result`
+for the whole build, so it is not additive; it needs a nightly toolchain.
 
 ## Span traces
 
@@ -235,7 +323,7 @@ fails silently: nothing errors, the trace is just not there.
 
 ```toml
 [dependencies]
-treat = { version = "0.23", features = ["axum", "spantrace"] }
+treat = { version = "0.26", features = ["axum", "spantrace"] }
 tracing-error = "0.2"
 tracing-subscriber = "0.3"
 ```
@@ -278,7 +366,8 @@ SpanTrace:
              at src/main.rs:14
 ```
 
-`ApiError`'s own trace is the `spantrace` field of `{:#?}`.
+`ApiError`'s own trace is the `SpanTrace:` section that ends its `{:?}`, and the
+`spantrace` field of `{:#?}`.
 
 ### When the trace is not there
 
@@ -299,7 +388,30 @@ By design, errors are returned with **HTTP 200** and the failure lives in
 `errors[]`. Clients branch on `code`, not on the status line. Set a real status
 per error with `.with_status(404)`, or seed it from the code via the
 `ApiErrorStatus` trait and `.with_code_status()` — see
-[frameworks.md](frameworks.md).
+[frameworks.md](frameworks.md). `#[status(N)]` on a derived code does either for
+you ([derives.md](derives.md)). `status()` reads it back, `has_status()` tells an
+explicit status from the default.
+
+**Wrapping does not inherit a status.** `treat::error("outer").with_error(inner)`
+reports the default even when `inner` carries a `404`: the wrapping layer decides
+what the client sees. To carry the inner status outward, read it before wrapping
+and pass it to `with_source_status`, which sets it unless `self` already has one:
+
+```rust
+let inner = treat::error("not_found").with_status(404);
+let inner_status = inner.status();
+let outer = treat::error("lookup_failed")
+    .with_error(inner)
+    .with_source_status(inner_status);
+assert_eq!(outer.status(), 404);
+```
+
+**Only an `ApiError` carries a status to the wire.** An `ApiResponse` has none,
+and the adapters answer it with `200`. Converting an error into one — `.into()`,
+`return result.into()`, or `?` in a handler whose error type is `ApiResponse` —
+keeps the envelope and drops the status. Return the `ApiError` itself
+(`Result<ApiResponse<T>, ApiError>`) whenever the status matters; see
+[responses.md](responses.md#building-responses).
 
 ### Defaulting errors to 500
 

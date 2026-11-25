@@ -40,7 +40,15 @@ let full = ApiResponse::<i32, String>::from(1)
 - `ApiError` / `&ApiError` → `ApiResponse` (errors)
 - `Result<T, ApiError>` → `ApiResponse<T>` (data or errors)
 
-That last one is why handlers can `return result.into()`.
+> **These keep only the envelope.** An `ApiResponse` carries no HTTP status,
+> and every framework adapter answers it with `200`. Converting an `ApiError`
+> into one — `.into()`, `return result.into()`, or `?` in a handler whose
+> error type is `ApiResponse` — drops the error's transport status: a
+> `.with_status(404)`, a `#[status]` from the derives and the
+> `error-status-500` default are all lost. When the status matters, return the
+> `ApiError` itself (`Result<ApiResponse<T>, ApiError>`); the adapters then
+> answer with its status. The `X-RPC-Status` header is unaffected either way:
+> it follows `errors[]`, so it still says `error`.
 
 ## `meta`: pagination, counts, anything
 
@@ -93,17 +101,33 @@ assert!(resp.has_error_code("user_not_found").is_some());
 To collapse a response into a `Result` in your own code, use the `inner*`
 extractors:
 
-- `inner::<E>()` / `into_inner::<E>()` — `Ok(Option<&T>)` or `Err(E)`, where `E:
-From<&ErrorMessage> + Into<erris::Report>` (pair this with
-  [`FromErrorMessage`](derives.md) for typed client errors).
-- `inner_data()` / `into_inner_data()` — `Ok(T)` or an `erris::Report` describing
-  the first error / the missing `data`.
+- `inner::<E>()` — `Ok(Option<&T>)` or `Err(E)` built from the first error,
+  where `E: From<&ErrorMessage>`; `into_inner::<E>()` is the owning form,
+  `Ok(Option<T>)`, with `E: From<ErrorMessage>`. An enum with
+  [`#[derive(FromErrorMessage)]`](derives.md#fromerrormessage--parse-responses-into-typed-errors)
+  has both impls.
+- `inner_data()` — `Ok(&T)`; `into_inner_data()` — `Ok(T)`. Either fails with an
+  `erris::Report` describing the first error or the missing `data`.
 
 ```rust
 use treat::prelude::*;
 
+#[derive(Debug, FromErrorMessage)]
+enum ClientError {
+    #[code("user_not_found")]
+    NotFound(ErrorMessage),
+    #[code("_")]
+    Other(ErrorMessage),
+}
+
 let resp: ApiResponse<i32> = success(42);
 assert_eq!(resp.inner_data().expect("data"), &42);
+assert_eq!(resp.inner::<ClientError>().expect("data"), Some(&42));
+assert_eq!(resp.into_inner_data().expect("data"), 42);
+
+let resp: ApiResponse<i32> =
+    serde_json::from_str(r#"{"errors":[{"code":"user_not_found"}]}"#).expect("json");
+assert!(matches!(resp.inner::<ClientError>(), Err(ClientError::NotFound(_))));
 ```
 
 ## Out-of-band result header
@@ -137,7 +161,8 @@ async fn get_user(/* ... */) { /* ... */ }
 
 - `ApiResponse<T, M>` — the full `{ data, meta, errors }` schema.
 - `ErrorResponse` — the error-only shape (`{ "errors": [ErrorMessage] }`), a
-  convenient `body` for failure responses. It serializes identically to an
-  `ApiResponse` that carries only errors.
+  convenient `body` for failure responses. With at least one error it
+  serializes identically to an `ApiResponse` that carries only errors; it does
+  not hide an empty list, so `ErrorResponse::default()` is `{"errors":[]}`.
 - `ErrorMessage` / `ErrorSource` — the error object and its locator also expose
   schemas.

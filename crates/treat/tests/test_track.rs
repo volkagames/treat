@@ -129,10 +129,9 @@ fn debug_lists_hops_above_the_raise_site() {
     let e = e.track();
 
     let debug = format!("{e:?}");
-    assert!(
-        debug.starts_with("treat error: e, message: m\n\nCaused by:\n   0: cause\n\nLocation:"),
-        "{debug}"
-    );
+    // `verbose-error` appends the cause chain to the first line itself.
+    assert!(debug.starts_with("treat error: e, message: m"), "{debug}");
+    assert!(debug.contains("\n\nCaused by:\n   0: cause\n\nLocation:"), "{debug}");
     let position = |line: u32| {
         debug
             .find(&format!("test_track.rs:{line}:"))

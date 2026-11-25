@@ -5,6 +5,8 @@
 /// level and dispatches on the value, keeping each `event!` call constant.
 ///
 /// Takes the same optional `target:` / `parent:` prefixes as `tracing::event!`.
+/// The expansion reaches `tracing` through this crate, so the calling crate
+/// needs no `tracing` dependency of its own.
 ///
 /// ```
 /// # use treat_axum_logging::event_dynamic_lvl;
@@ -19,43 +21,43 @@
 macro_rules! event_dynamic_lvl {
     ( $(target: $target:expr,)? $(parent: $parent:expr,)? $lvl:expr, $($tt:tt)* ) => {
         match $lvl {
-            tracing::Level::ERROR => {
-                tracing::event!(
+            $crate::__private::tracing::Level::ERROR => {
+                $crate::__private::tracing::event!(
                     $(target: $target,)?
                     $(parent: $parent,)?
-                    tracing::Level::ERROR,
+                    $crate::__private::tracing::Level::ERROR,
                     $($tt)*
                 );
             }
-            tracing::Level::WARN => {
-                tracing::event!(
+            $crate::__private::tracing::Level::WARN => {
+                $crate::__private::tracing::event!(
                     $(target: $target,)?
                     $(parent: $parent,)?
-                    tracing::Level::WARN,
+                    $crate::__private::tracing::Level::WARN,
                     $($tt)*
                 );
             }
-            tracing::Level::INFO => {
-                tracing::event!(
+            $crate::__private::tracing::Level::INFO => {
+                $crate::__private::tracing::event!(
                     $(target: $target,)?
                     $(parent: $parent,)?
-                    tracing::Level::INFO,
+                    $crate::__private::tracing::Level::INFO,
                     $($tt)*
                 );
             }
-            tracing::Level::DEBUG => {
-                tracing::event!(
+            $crate::__private::tracing::Level::DEBUG => {
+                $crate::__private::tracing::event!(
                     $(target: $target,)?
                     $(parent: $parent,)?
-                    tracing::Level::DEBUG,
+                    $crate::__private::tracing::Level::DEBUG,
                     $($tt)*
                 );
             }
-            tracing::Level::TRACE => {
-                tracing::event!(
+            $crate::__private::tracing::Level::TRACE => {
+                $crate::__private::tracing::event!(
                     $(target: $target,)?
                     $(parent: $parent,)?
-                    tracing::Level::TRACE,
+                    $crate::__private::tracing::Level::TRACE,
                     $($tt)*
                 );
             }

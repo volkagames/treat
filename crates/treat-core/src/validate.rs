@@ -13,6 +13,11 @@ use validator::{Validate, ValidationErrors, ValidationErrorsKind};
 ///
 /// The `code` is the validator rule code (`"length"`, `"email"`, ...), the
 /// `message` is the rule message when present.
+///
+/// The entries are ordered by field name at every level of nesting (list items
+/// by index), so the same input always yields the same `errors[]`: `validator`
+/// keeps fields in a `HashMap`, whose iteration order changes from run to run.
+/// Within a field, rules keep the order `validator` reports them in.
 pub fn validation_error_messages(errors: &ValidationErrors) -> Vec<ErrorMessage> {
     let mut output = Vec::new();
     collect(errors, &mut String::new(), &mut output);
@@ -20,7 +25,9 @@ pub fn validation_error_messages(errors: &ValidationErrors) -> Vec<ErrorMessage>
 }
 
 fn collect(errors: &ValidationErrors, prefix: &mut String, output: &mut Vec<ErrorMessage>) {
-    for (field, kind) in errors.errors() {
+    let mut fields: Vec<_> = errors.errors().iter().collect();
+    fields.sort_unstable_by_key(|(field, _)| *field);
+    for (field, kind) in fields {
         let base = prefix.len();
         prefix.push('/');
         prefix.push_str(&escape_token(field));
@@ -63,9 +70,17 @@ fn escape_token(token: &str) -> String {
 /// `errors[]` per field violation (each with a JSON Pointer locator).
 ///
 /// Returns `Ok(())` when valid. The `Err` is an [`ApiResponse`], which every
-/// framework adapter renders; a handler whose error type is `ApiResponse` can
-/// bubble it with `?` (and `?` on a [`crate::ApiError`] unifies via the existing
-/// `From<ApiError> for ApiResponse`).
+/// framework adapter renders — always with `200`, since an `ApiResponse` carries
+/// no status. To answer a validation failure with another one, pair the
+/// envelope with the status yourself (axum: `(StatusCode, response)`), as the
+/// `ApiValidated` extractors do with `422`.
+///
+/// Do not make `ApiResponse` a handler's error type just so `?` also accepts an
+/// [`ApiError`](crate::ApiError): `From<ApiError> for ApiResponse` keeps only
+/// the envelope, so the error's status (`with_status`, `#[status]`,
+/// `error-status-500`) is lost and the response goes out as `200`. Where the
+/// status matters, keep `ApiError` as the error type and validate in the
+/// extractor (`ApiValidated`) or answer the envelope with an explicit status.
 ///
 /// ```
 /// # use validator::Validate;

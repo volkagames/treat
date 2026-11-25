@@ -44,10 +44,11 @@ Failure responses contain a non-empty `errors[]` array:
 
 The serialization rules are deliberately small:
 
-- success has `data`;
+- success always has `data`, `null` when there is none;
 - failure has non-empty `errors[]`;
-- `meta` is optional;
-- empty fields are omitted;
+- `meta` is optional and omitted when absent;
+- an error entry omits each optional field it does not set (`message`,
+  `source`, `type`, `instance`, `meta`);
 - `data` and `errors[]` do not coexist in the serialized response.
 
 Clients parse one schema and branch on `errors[]` and `code`. They do not infer
@@ -135,7 +136,7 @@ The envelope exists because application errors need a richer contract than the
 HTTP status line can provide:
 
 - clients match stable machine codes;
-- validation can return one error per invalid field;
+- validation can return one error per violated rule, each pointing at its field;
 - bulk operations can return every relevant failure;
 - logs keep source chains, caller locations, and framework-consistent response
   data.
@@ -204,24 +205,35 @@ pub async fn info() -> Result<treat::ApiResponse<InfoResponse>, ApiError> {
   transport status hint, and caller location.
 - `ErrorMessage`: serialized client-facing error entry.
 - Derives for typed error enums: `ApiError`, `ApiErrorCode`,
-  `FromErrorMessage`.
+  `FromErrorMessage`, and `WireEnum` for the wire names of RPC code enums.
 - Framework adapters for actix-web, axum, and poem.
-- Request extractors that can report JSON parse and validation failures with
-  field locators.
+- Request extractors for actix-web and axum that report JSON parse and
+  validation failures in the envelope, with field locators.
 - OpenAPI schemas through `utoipa`.
-- Request id, tracing root span, and OpenTelemetry middleware for actix and
-  tower-based stacks.
+- Request id, tracing root span, and OpenTelemetry middleware for actix-web
+  and for axum (through tower).
 - Ready-made typed `meta` slots such as pagination and rate limits.
+- `treat::rpc`: the runtime generated RPC services link against — an axum
+  server and a reqwest client that speak the envelope (see
+  [`docs/rpc.md`](docs/rpc.md)).
 
 ## Workspace Layout
 
-| Crate                                 | Purpose                                                                   |
-| ------------------------------------- | ------------------------------------------------------------------------- |
-| [`treat`](crates/treat)               | Facade crate. Depend on this in applications.                             |
-| [`treat-core`](crates/treat-core)     | Envelope, errors, conversions, adapters, extractors, validation support.  |
-| [`treat-derive`](crates/treat-derive) | Proc macros for typed errors and response parsing.                        |
-| [`treat-actix`](crates/treat-actix)   | actix-web middleware: logger, request id, root span, OpenTelemetry.       |
-| [`treat-tower`](crates/treat-tower)   | tower middleware for axum and poem: request id, root span, OpenTelemetry. |
+| Crate                                             | Purpose                                                                                 |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| [`treat`](crates/treat)                           | Facade crate. Depend on this in applications.                                           |
+| [`treat-core`](crates/treat-core)                 | Envelope, errors, conversions, adapters, extractors, validation support.                |
+| [`treat-derive`](crates/treat-derive)             | Proc macros for typed errors, response parsing, and RPC wire names.                     |
+| [`treat-actix`](crates/treat-actix)               | actix-web middleware: logger, request id, root span, OpenTelemetry.                     |
+| [`treat-tower`](crates/treat-tower)               | tower middleware for axum: request id, root span, OpenTelemetry.                        |
+| [`treat-rpc`](crates/treat-rpc)                   | Runtime for generated RPC services: axum server and reqwest client (`treat::rpc`).      |
+| [`treat-axum-logging`](crates/treat-axum-logging) | axum layer that logs the `ApiError` a response carries. Not re-exported by the facade.  |
+
+All seven are published. The facade pulls in `treat-core` always and the rest
+behind feature flags, so an application depends on `treat` alone;
+`treat-axum-logging` is the exception, a dependency of its own (see
+[`docs/frameworks.md`](docs/frameworks.md#error-logging-layer-for-axum-treat-axum-logging)
+for how it pairs with `treat-tower`'s `TraceLayer`).
 
 Two more members are not published. They are compile-only: the derive macros must
 emit absolute paths, so a bare `ApiResponse` or a hardcoded `treat::` breaks the
@@ -236,35 +248,36 @@ build here instead of downstream.
 
 The `treat` facade re-exports functionality behind feature flags.
 
-| Feature             | Enables                                                             |
-| ------------------- | ------------------------------------------------------------------- |
-| `derive`            | Derive macros. Enabled by default.                                  |
-| `actix`             | actix-web response traits, extractors, middleware, telemetry.       |
-| `axum`              | axum `IntoResponse`, extractors, response inspection.               |
-| `poem`              | poem response integration.                                          |
-| `openapi`           | `utoipa::ToSchema` support.                                         |
-| `serde-path`        | JSON body errors with field pointers.                               |
-| `validator`         | Validation helpers that produce `errors[]`.                         |
-| `validator-extract` | Framework extractors that parse and validate request bodies.        |
-| `meta-slots`        | Typed `meta` helpers such as pagination and rate limits.            |
-| `actix-middleware`  | actix request id, logger, and root span.                            |
-| `actix-telemetry`   | OpenTelemetry context propagation for actix.                        |
-| `tower-middleware`  | tower request id and root span middleware.                          |
-| `tower-telemetry`   | OpenTelemetry context propagation for tower.                        |
-| `spantrace`         | Span traces on errors; also needs `ErrorLayer` (docs/errors.md).    |
-| `backtrace`         | Capture backtraces on errors.                                       |
-| `verbose-error`     | Serialize full cause chains to clients.                             |
-| `error-status-500`  | Default an error with no explicit status to `500` instead of `200`. |
-| `rpc-status-header` | Add an `X-RPC-Status: ok` / `error` header to every response.       |
-| `rpc`               | `treat::rpc::Runtime` for generated RPC code (docs/rpc.md).         |
-| `rpc-server`        | axum server runtime for generated RPC code. Implies `rpc`.          |
-| `rpc-client`        | reqwest client runtime for generated RPC code. Implies `rpc`.       |
-| `rpc-client-rustls` | `rpc-client` with TLS (rustls), needed for `https` base URLs.       |
-| `rpc-stream`        | Server-sent events and raw bodies for the RPC server or client.     |
-| `nightly-provide`   | `std::error::Error::provide` support. Requires nightly.             |
-| `tracked`           | erris `TrackedResult` support, `ApiError` as its error. Nightly.    |
+| Feature             | Enables                                                                                        |
+| ------------------- | ---------------------------------------------------------------------------------------------- |
+| `derive`            | Derive macros. Enabled by default.                                                             |
+| `actix`             | actix-web `Responder` / `ResponseError`, response inspection, middleware, telemetry.           |
+| `axum`              | axum `IntoResponse`, response inspection.                                                      |
+| `poem`              | poem `IntoResponse` / `ResponseError`, response inspection. No middleware or extractors.       |
+| `openapi`           | `utoipa::ToSchema` support.                                                                    |
+| `serde-path`        | `deserialize_body`: JSON body errors with field pointers. With `actix` / `axum`: `ApiJson<T>`. |
+| `validator`         | Validation helpers that produce `errors[]` with field pointers.                                |
+| `validator-extract` | `ApiValidated<T>` (with `actix` / `axum`). Implies `validator` and `serde-path`.               |
+| `meta-slots`        | Typed `meta` helpers such as pagination and rate limits.                                       |
+| `actix-middleware`  | actix request id, logger, and root span. Part of `actix`.                                      |
+| `actix-telemetry`   | OpenTelemetry context propagation for actix. Part of `actix`.                                  |
+| `tower-middleware`  | tower request id and root span middleware for axum, as `treat::tower`.                         |
+| `tower-telemetry`   | OpenTelemetry context propagation for the tower middleware.                                    |
+| `spantrace`         | Span traces on errors; also needs `ErrorLayer` (docs/errors.md).                               |
+| `backtrace`         | Capture backtraces on errors.                                                                  |
+| `verbose-error`     | Serialize full cause chains to clients.                                                        |
+| `error-status-500`  | Default an error with no explicit status to `500` instead of `200`.                            |
+| `rpc-status-header` | `X-RPC-Status: ok` / `error` on every envelope and `ApiError` response; with `rpc-server`, on bare, raw and SSE successes too. |
+| `rpc`               | `treat::rpc::Runtime` for generated RPC code (docs/rpc.md).                                    |
+| `rpc-server`        | axum server runtime for generated RPC code. Implies `rpc`.                                     |
+| `rpc-client`        | reqwest client runtime for generated RPC code. Implies `rpc`.                                  |
+| `rpc-client-rustls` | `rpc-client` with TLS (rustls), needed for `https` base URLs.                                  |
+| `rpc-stream`        | Server-sent events and raw bodies for the RPC server or client. Implies `rpc`.                 |
+| `nightly-provide`   | `std::error::Error::provide` support. Requires nightly.                                        |
+| `tracked`           | erris `TrackedResult` support, `ApiError` as its error. Nightly; not additive (see below).     |
 
-The crate builds on stable Rust unless `nightly-provide` or `tracked` is enabled.
+The crate builds on stable Rust (MSRV 1.88) unless `nightly-provide` or
+`tracked` is enabled.
 
 `tracked` is not additive: it turns on erris's `tracked` mode, which makes
 `erris::Result` a `TrackedResult` across the whole build, your own code included.
@@ -305,12 +318,16 @@ reuses the span trace and backtrace already captured below it.
 ## Development
 
 ```sh
-just test
+just install   # cargo-nextest, cargo-deny, ... used by the recipes below
+just test      # workspace tests, release profile (PROFILE=dev for a debug build)
 just lint
 ```
 
+The `tracked` tests need nightly and their own feature set, so `just test` does
+not run them:
+
 ```sh
-RUSTFLAGS= cargo +stable test
+just test-tracked
 ```
 
 ## License

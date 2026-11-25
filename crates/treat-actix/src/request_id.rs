@@ -91,12 +91,28 @@ impl FromRequest for RequestId {
     }
 }
 
+/// The [`RequestId`] extractor's rejection: the request did not pass through the
+/// [`Logger`](crate::Logger). See its [`ResponseError`] impl for the response.
 #[derive(Debug)]
 pub struct RequestIdExtractionError {
     _priv: (),
 }
 
-impl ResponseError for RequestIdExtractionError {}
+/// Rendered as a `treat` envelope with code `request_id_unavailable` and status `500`, like
+/// any other `ApiError`: the extractor ran without the [`Logger`](crate::Logger)
+/// in front of it, which is a wiring bug of the service, not a client error.
+impl ResponseError for RequestIdExtractionError {
+    fn status_code(&self) -> actix_web::http::StatusCode {
+        actix_web::http::StatusCode::INTERNAL_SERVER_ERROR
+    }
+
+    fn error_response(&self) -> actix_web::HttpResponse {
+        treat_core::error("request_id_unavailable")
+            .with_message(self.to_string())
+            .with_status(500)
+            .error_response()
+    }
+}
 
 impl std::fmt::Display for RequestIdExtractionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

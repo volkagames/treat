@@ -13,7 +13,7 @@
 //! | `client` | `client` | the reqwest client runtime, without TLS |
 //! | `stream` | — | SSE and raw byte bodies for the above; re-exports `bytes`, `futures_core`, `futures_util` |
 //! | `rustls` | — | `https` for the client: `reqwest`'s `rustls` feature |
-//! | `rpc-status-header` | — | `x-rpc-status: ok` on the server's raw and SSE successes too |
+//! | `rpc-status-header` | — | `x-rpc-status: ok` on bare (`@http(envelope: false)`), raw and SSE successes too |
 //!
 //! Helpers that need the generated registry are inherent functions of
 //! [`Runtime<R>`], so generated code names the registry once —
@@ -35,6 +35,11 @@
     clippy::unwrap_used
 )]
 
+// `stream` turns `http` on for the client, which needs it only together with
+// `stream` — a pair of features Cargo cannot name as one dependency's
+// condition. Without `client` nothing reads it; this keeps that build quiet.
+#[cfg(all(feature = "stream", not(feature = "client")))]
+use http as _;
 use std::marker::PhantomData;
 pub use treat_core::rpc::*;
 #[cfg(feature = "stream")]

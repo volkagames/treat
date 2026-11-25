@@ -489,7 +489,8 @@ impl<C: ApiErrorCode> std::ops::Deref for ApiError<C> {
 impl<C: ApiErrorCode> std::fmt::Display for ApiError<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "treat error: {}", self.code)?;
-        if let Some(message) = self.format_message()
+        let message = self.format_message();
+        if let Some(message) = message
             && !message.is_empty()
         {
             write!(f, ", message: {message}")?;
@@ -707,6 +708,7 @@ impl<C: ApiErrorCode> std::fmt::Debug for ApiError<C> {
                 .debug_struct("ApiError")
                 .field("code", &self.code.to_string())
                 .field("message", &self.message)
+                .field("meta", &self.meta)
                 .field("error_source", &self.error_source)
                 .field("type_uri", &self.type_uri)
                 .field("instance", &self.instance)
@@ -714,6 +716,7 @@ impl<C: ApiErrorCode> std::fmt::Debug for ApiError<C> {
                 .field("source", &self.source)
                 .field("verbose", &self.verbose)
                 .field("location", &self.location)
+                .field("hops", &self.hops)
                 .field(
                     "spantrace",
                     #[cfg(feature = "spantrace")]

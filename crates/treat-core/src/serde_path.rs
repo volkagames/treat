@@ -6,8 +6,9 @@
 
 use crate::{ApiError, error};
 
-/// Error code used for body deserialization failures.
-const INVALID_BODY: &str = "invalid_body";
+/// Error code used for body deserialization failures, and by the request
+/// extractors for a body that could not be read at all.
+pub(crate) const INVALID_BODY: &str = "invalid_body";
 
 /// HTTP status the request extractors report for a body that could not be parsed
 /// or failed validation.
@@ -70,6 +71,16 @@ fn error_from_path<E: std::fmt::Display>(err: serde_path_to_error::Error<E>) -> 
         Some(pointer) => err.with_pointer(pointer),
         None => err,
     }
+}
+
+/// The error the request extractors report for a body that could not be read
+/// (over the size limit, a broken stream): `"invalid_body"` with the
+/// framework's message, keeping the framework's status for it — `413` for a
+/// body over the limit — rather than [`REJECTION_STATUS`].
+#[cfg(any(feature = "axum", feature = "actix"))]
+#[track_caller]
+pub(crate) fn body_read_error(message: impl Into<String>, status: u16) -> ApiError {
+    error(INVALID_BODY).with_message(message.into()).with_status(status)
 }
 
 /// Convert a `serde_path_to_error` [`Path`](serde_path_to_error::Path) into an

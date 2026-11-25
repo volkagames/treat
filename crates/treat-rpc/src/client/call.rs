@@ -6,6 +6,22 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 impl RpcClient {
+    /// The most bytes read of an answer that is not the one the operation
+    /// sends on success — a status other than `2xx`, `x-rpc-status: error`, a
+    /// subscription answered with something other than an event stream — to
+    /// find the refusal in it: 1 MiB.
+    ///
+    /// A refusal is a short envelope, so a body still going past this is none:
+    /// [`ClientError::Decode`] under a `2xx` status, [`ClientError::Status`]
+    /// under any other, without reading the rest. Bounded so a misrouted URL
+    /// answering a large download costs no more than this.
+    ///
+    /// Every method reads such an answer this way, [`call`](Self::call) and
+    /// [`call_http`](Self::call_http) included. A success is not bounded: a
+    /// `2xx` envelope (or bare value) not declared `x-rpc-status: error` is
+    /// the operation's answer, read whole however large the service made it.
+    pub const REFUSAL_LIMIT: usize = 1 << 20;
+
     /// Issue one RPC call — `POST` with the input as a JSON body — and unwrap
     /// the envelope.
     ///
@@ -14,7 +30,9 @@ impl RpcClient {
     ///
     /// The status line is not the signal: an RPC route answers a failure with
     /// `200 OK` unless the service gave it another status, so `errors[]`
-    /// decides the outcome and is checked first.
+    /// decides the outcome and is checked first. A non-`2xx` answer, or one
+    /// declared `x-rpc-status: error`, is read only up to
+    /// [`REFUSAL_LIMIT`](Self::REFUSAL_LIMIT); a success is read whole.
     pub async fn call<I, O, C>(&self, path: &str, input: &I) -> ClientResult<O, C>
     where
         I: Serialize + ?Sized,
@@ -164,18 +182,29 @@ pub(crate) async fn send<C>(request: reqwest::RequestBuilder) -> Result<reqwest:
     })
 }
 
-/// Read the whole of `response` as [`read_answer`] does; one declared
-/// `x-rpc-status: error` is read as [`read_refusal`] does whatever `envelope`
-/// says: the header said the call failed, so a body carrying `data` instead of
-/// `errors[]` is no answer rather than a success.
+/// Read `response` as [`read_answer`] does; one declared `x-rpc-status: error`
+/// is read as [`refusal`] does whatever `envelope` says: the header said the
+/// call failed, so a body carrying `data` instead of `errors[]` is no answer
+/// rather than a success.
+///
+/// A `2xx` answer is read whole: it is the operation's own. Any other is read
+/// up to [`REFUSAL_LIMIT`](RpcClient::REFUSAL_LIMIT), and one going past it is
+/// [`ClientError::Status`], the rest unread.
 pub(crate) async fn receive<O: DeserializeOwned, C>(response: reqwest::Response, envelope: bool) -> ClientResult<O, C> {
     let status = response.status();
     let declared_failure = rpc_status(&response) == Some(RpcStatus::Error);
-    let body = response.bytes().await.map_err(transport)?;
     if declared_failure {
-        return Err(read_refusal(status, &body));
+        return Err(refusal(response).await);
     }
-    read_answer(status, &body, envelope)
+    if status.is_success() {
+        let body = response.bytes().await.map_err(transport)?;
+        return read_answer(status, &body, envelope);
+    }
+    let body = body_within(response, RpcClient::REFUSAL_LIMIT).await?;
+    match body {
+        Some(body) => read_answer(status, &body, envelope),
+        None => Err(too_long(status, RpcClient::REFUSAL_LIMIT)),
+    }
 }
 
 /// An outcome the `x-rpc-status` header declares.
@@ -202,28 +231,34 @@ pub(crate) fn rpc_status(response: &reqwest::Response) -> Option<RpcStatus> {
 /// Read `response` as [`read_refusal`] does, up to
 /// [`REFUSAL_LIMIT`](RpcClient::REFUSAL_LIMIT) bytes: a body going past it is
 /// no refusal, and the rest of it is not read.
-#[cfg(feature = "stream")]
 pub(crate) async fn refusal<C>(response: reqwest::Response) -> ClientError<C> {
-    refusal_within(response, RpcClient::REFUSAL_LIMIT).await
+    let status = response.status();
+    let body = body_within(response, RpcClient::REFUSAL_LIMIT).await;
+    match body {
+        Ok(Some(body)) => read_refusal(status, &body),
+        Ok(None) => too_long(status, RpcClient::REFUSAL_LIMIT),
+        Err(error) => error,
+    }
 }
 
-#[cfg(feature = "stream")]
-async fn refusal_within<C>(mut response: reqwest::Response, limit: usize) -> ClientError<C> {
-    let status = response.status();
+/// The whole body of `response` if it ends within `limit` bytes; `None` once
+/// it goes past, the rest left unread.
+async fn body_within<C>(mut response: reqwest::Response, limit: usize) -> Result<Option<Vec<u8>>, ClientError<C>> {
     let mut body: Vec<u8> = Vec::new();
     let mut ended = false;
     while !ended && body.len() <= limit {
-        let chunk = response.chunk().await;
+        let chunk = response.chunk().await.map_err(transport)?;
         match chunk {
-            Ok(Some(chunk)) => body.extend_from_slice(&chunk),
-            Ok(None) => ended = true,
-            Err(e) => return transport(e),
+            Some(chunk) => body.extend_from_slice(&chunk),
+            None => ended = true,
         }
     }
-    if !ended {
-        return unusable(status, format!("expected a refusal, got a body of over {limit} bytes"));
-    }
-    read_refusal(status, &body)
+    Ok(ended.then_some(body))
+}
+
+/// A refusal's body that went past `limit`: none, under any status.
+fn too_long<C>(status: StatusCode, limit: usize) -> ClientError<C> {
+    unusable(status, format!("expected a refusal, got a body of over {limit} bytes"))
 }
 
 pub(crate) fn transport<C>(error: reqwest::Error) -> ClientError<C> {

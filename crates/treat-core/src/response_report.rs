@@ -18,17 +18,22 @@ impl<T: ResponseData, M: ResponseData> ApiResponse<T, M> {
 
     // `erris::Result` is spelled out as std's here and below: with erris `tracked` on it becomes
     // `TrackedResult`, which takes no error type, so a generic `E` needs the std result.
-    pub fn inner<'a, E: From<&'a ErrorMessage> + Into<erris::Report>>(
-        &'a self,
-    ) -> std::result::Result<Option<&'a T>, E> {
+    /// Borrow the data, or convert the first error into `E` — typically an enum
+    /// with `#[derive(FromErrorMessage)]`, which provides the `From` impl.
+    ///
+    /// `Ok(None)` is a success envelope without data (`"data": null`).
+    pub fn inner<'a, E: From<&'a ErrorMessage>>(&'a self) -> std::result::Result<Option<&'a T>, E> {
         if let Some(err) = self.errors.first() {
             return Err(E::from(err));
         }
         Ok(self.data.as_ref())
     }
 
-    pub fn into_inner<E: From<ErrorMessage> + Into<erris::Report>>(self) -> std::result::Result<Option<T>, E> {
-        if let Some(err) = self.errors.into_iter().next() {
+    /// The owning [`inner`](Self::inner): take the data, or convert the first
+    /// error into `E`.
+    pub fn into_inner<E: From<ErrorMessage>>(self) -> std::result::Result<Option<T>, E> {
+        let first = self.errors.into_iter().next();
+        if let Some(err) = first {
             return Err(E::from(err));
         }
         Ok(self.data)
@@ -36,6 +41,8 @@ impl<T: ResponseData, M: ResponseData> ApiResponse<T, M> {
 
     // Variants are named through `erris::Result` so they resolve to the tracking ones when erris
     // `tracked` is on, and to std's otherwise.
+    /// Borrow the data, or report the first error (or the missing `data`) as an
+    /// [`erris::Report`].
     pub fn inner_data(&self) -> erris::Result<&T> {
         if let Some(err) = self.errors.first() {
             return erris::Result::Err(erris::report!("{err}"));
@@ -46,6 +53,7 @@ impl<T: ResponseData, M: ResponseData> ApiResponse<T, M> {
         }
     }
 
+    /// The owning [`inner_data`](Self::inner_data).
     pub fn into_inner_data(self) -> erris::Result<T> {
         if let Some(err) = self.errors.first() {
             return erris::Result::Err(erris::report!("{err}"));

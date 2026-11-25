@@ -3,7 +3,7 @@
 //! `telemetry` feature) OpenTelemetry parent-context propagation.
 
 use crate::RequestId;
-use crate::root_span::{record_status, root_span};
+use crate::root_span::{record_api_error, record_status, root_span};
 use http::{Request, Response};
 use pin_project::pin_project;
 use std::future::Future;
@@ -79,8 +79,9 @@ where
     }
 }
 
-/// Future for [`TraceService`]: records the response status on the span and
-/// echoes the request id back to the caller when the inner future resolves.
+/// Future for [`TraceService`]: when the inner future resolves, records the
+/// response status and any `treat` error the response carries on the span, and
+/// echoes the request id back to the caller.
 #[pin_project]
 pub struct TraceFuture<F> {
     #[pin]
@@ -99,14 +100,23 @@ where
         let this = self.project();
         let _guard = this.span.enter();
         let mut outcome = std::task::ready!(this.future.poll(cx));
-        if let Ok(response) = &mut outcome {
-            record_status(this.span, response.status());
-            // A handler that set the header itself has the final say; only fill in
-            // the gap so the caller can always correlate the response with a log.
-            response
-                .headers_mut()
-                .entry(crate::X_REQUEST_ID)
-                .or_insert_with(|| this.request_id.to_header_value());
+        match &mut outcome {
+            Ok(response) => {
+                record_status(this.span, response.status());
+                record_api_error(this.span, response);
+                // A handler that set the header itself has the final say; only
+                // fill in the gap so the caller can always correlate the response
+                // with a log.
+                response
+                    .headers_mut()
+                    .entry(crate::X_REQUEST_ID)
+                    .or_insert_with(|| this.request_id.to_header_value());
+            }
+            // No response to stamp: the service failed (axum's own services
+            // never do; their error type is `Infallible`).
+            Err(_) => {
+                this.span.record("otel.status_code", "ERROR");
+            }
         }
         Poll::Ready(outcome)
     }

@@ -53,6 +53,17 @@ pub const RAW_BODY_LIMIT: usize = 8 * 1024 * 1024;
 ///
 /// With feature `rpc-status-header` the response carries `x-rpc-status: ok`,
 /// as every successful envelope does: the stream opened.
+///
+/// An event that does not serialize as JSON (a map with non-string keys, a
+/// `Serialize` impl that fails) ends the stream there, the events before it
+/// delivered and none after: the answer is already committed to `200`, so
+/// axum fails the body and the connection drops. `RpcClient::subscribe`
+/// reports that as `StreamError::Transport` after the events that arrived,
+/// or as `ClientError::Transport` if it happened before the answer's head
+/// went out.
+/// Nothing is logged here, since the runtime has no logger: an event type that
+/// can fail to serialize is better turned into JSON by the service, which can
+/// log and skip the event.
 pub fn sse_response<T: Serialize + Send + 'static>(stream: EventStream<T>) -> Response {
     let frames = stream.map(|event| Event::default().json_data(event));
     let response = Sse::new(frames)

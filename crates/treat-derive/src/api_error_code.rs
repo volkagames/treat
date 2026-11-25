@@ -30,11 +30,15 @@ pub fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
     for variant in variants {
         let ident = &variant.ident;
         let message = crate::fetch_message_from_attrs(&variant.attrs)?;
-        let fields_defs = variant_fields_defs(&variant.fields);
         let status = crate::fetch_status_from_attrs(&variant.attrs)?;
         let with_status = status.map(|status| quote! { .with_status(#status) });
         from_api_err_impl.push(match message {
             Some(message) => {
+                // Bind only the fields the message names: a field bound and
+                // never read is an `unused_variables` warning in the user's
+                // crate, which `-D warnings` turns into a failed build.
+                let referenced = format_arg_names(&message);
+                let fields_defs = variant_fields_defs(&variant.fields, &referenced);
                 match variant.fields {
                     Fields::Unit => {
                         quote! {
@@ -123,9 +127,21 @@ pub fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
         });
     }
 
+    // A generic enum is a code only where its parameters make it one: the
+    // conversion into `ApiError<Self>` is bounded on `Self` being a `'static`
+    // `ApiErrorCode`, so the impl exists exactly for the instantiations that
+    // satisfy it and the enum's own bounds carry over unchanged.
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let this = quote! { #enum_name #ty_generics };
+    let code_generics = crate::with_predicates(
+        &input.generics,
+        [syn::parse_quote! { #this: #treat::ApiErrorCode + 'static }],
+    );
+    let (code_impl_generics, _, code_where_clause) = code_generics.split_for_impl();
+
     let status_ts = has_status.then(|| {
         quote! {
-            impl #treat::ApiErrorStatus for #enum_name {
+            impl #impl_generics #treat::ApiErrorStatus for #this #where_clause {
                 fn status_code(&self) -> ::core::primitive::u16 {
                     match self {
                         #(#status_impl)*
@@ -135,17 +151,28 @@ pub fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
         }
     });
 
+    // The parameters are named apart from anything a user would call an enum
+    // or a type parameter, so an enum named `T` or `M` is not captured by them.
+    let result_generics = crate::with_type_params(
+        &code_generics,
+        [
+            syn::parse_quote! { __TreatData: #treat::ResponseData },
+            syn::parse_quote! { __TreatMeta: #treat::ResponseData },
+        ],
+    );
+    let (result_impl_generics, _, result_where_clause) = result_generics.split_for_impl();
+
     let ts = quote! {
-        impl ::core::convert::From<#enum_name> for #treat::ApiError<#enum_name> {
+        impl #code_impl_generics ::core::convert::From<#this> for #treat::ApiError<#this> #code_where_clause {
             #[track_caller]
-            fn from(#value: #enum_name) -> Self {
+            fn from(#value: #this) -> Self {
                 match &#value {
                     #(#from_api_err_impl)*
                 }
             }
         }
 
-        impl ::core::fmt::Display for #enum_name {
+        impl #impl_generics ::core::fmt::Display for #this #where_clause {
             fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                 match self {
                     #(#display_impl)*
@@ -153,11 +180,9 @@ pub fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
             }
         }
 
-        // The parameters are named apart from anything a user would call an
-        // enum, so an enum named `T` or `M` is not captured by them.
-        impl<__TreatData: #treat::ResponseData, __TreatMeta: #treat::ResponseData> ::core::convert::From<#enum_name>
-            for ::core::result::Result<#treat::ApiResponse<__TreatData, __TreatMeta>, #enum_name> {
-            fn from(code: #enum_name) -> Self {
+        impl #result_impl_generics ::core::convert::From<#this>
+            for ::core::result::Result<#treat::ApiResponse<__TreatData, __TreatMeta>, #this> #result_where_clause {
+            fn from(code: #this) -> Self {
                 ::core::result::Result::Err(code)
             }
         }
@@ -173,7 +198,12 @@ pub fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
     Ok(ts)
 }
 
-fn variant_fields_defs(fields: &syn::Fields) -> TokenStream {
+/// The pattern bindings for a variant's fields, binding only the ones in
+/// `referenced` (the names a `#[message]` format string reads). Tuple fields are
+/// bound as `arg_0`, `arg_1`, ...; an unread tuple field is `_`. The caller
+/// closes the pattern with `..`.
+fn variant_fields_defs(fields: &syn::Fields, referenced: &[String]) -> TokenStream {
+    let is_referenced = |name: &str| referenced.iter().any(|r| r == name);
     match fields {
         syn::Fields::Unit => {
             quote! {}
@@ -181,17 +211,79 @@ fn variant_fields_defs(fields: &syn::Fields) -> TokenStream {
         syn::Fields::Named(fields) => {
             let recurse = fields.named.iter().filter_map(|f| {
                 let name = f.ident.as_ref()?;
-                Some(quote! { #name, })
+                // A raw identifier is read under its unprefixed name too.
+                let read = is_referenced(&name.to_string()) || is_referenced(&name.unraw().to_string());
+                read.then(|| quote! { #name, })
             });
             quote! {#(#recurse)*}
         }
         syn::Fields::Unnamed(fields) => {
             let recurse = fields.unnamed.iter().enumerate().map(|(index, _f)| {
                 let name = format_ident!("arg_{index}");
-                quote! { #name, }
+                match is_referenced(&name.to_string()) {
+                    true => quote! { #name, },
+                    false => quote! { _, },
+                }
             });
 
             quote! {#(#recurse)*}
         }
+    }
+}
+
+/// The identifiers a format string reads: each `{name}` / `{name:spec}`
+/// argument and each `name$` width or precision inside a spec. `{{` and `}}` are
+/// escapes. Positional arguments (`{0}`, `{}`) name nothing.
+///
+/// An over-approximation is harmless (the field is bound and read anyway, or
+/// the name is no field), so anything identifier-shaped counts.
+fn format_arg_names(format: &str) -> Vec<String> {
+    // Dropping the escapes first leaves every `{` opening an argument. For a
+    // valid format string this keeps each argument's own braces: in `{a}}}`
+    // the leftmost `}}` is removed, and the `}` left over still closes `{a`.
+    let unescaped = format.replace("{{", "").replace("}}", "");
+    let mut names = Vec::new();
+    for piece in unescaped.split('{').skip(1) {
+        let spec = piece.split_once('}').map_or(piece, |(spec, _)| spec);
+        let (argument, format_spec) = spec.split_once(':').unwrap_or((spec, ""));
+        push_identifier(&mut names, argument.trim());
+        // `name$` in a width or precision; a fill character is always followed
+        // by an alignment, never by `$`.
+        let mut word = String::new();
+        for c in format_spec.chars() {
+            if c == '$' {
+                push_identifier(&mut names, &word);
+            }
+            match c.is_alphanumeric() || c == '_' {
+                true => word.push(c),
+                false => word.clear(),
+            }
+        }
+    }
+    names
+}
+
+fn push_identifier(names: &mut Vec<String>, candidate: &str) {
+    let candidate = candidate.strip_prefix("r#").unwrap_or(candidate);
+    let starts_like_identifier = candidate.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_');
+    if starts_like_identifier && candidate != "_" {
+        names.push(candidate.to_string());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_arg_names;
+
+    #[test]
+    fn format_arg_names_reads_arguments_and_counts() {
+        assert_eq!(format_arg_names("only {a}"), ["a"]);
+        assert_eq!(
+            format_arg_names("{a:?} and {b:>width$.prec$}"),
+            ["a", "b", "width", "prec"]
+        );
+        assert_eq!(format_arg_names("{{escaped}} {arg_0} {} {0}"), ["arg_0"]);
+        assert_eq!(format_arg_names("{{{a}}}"), ["a"]);
+        assert!(format_arg_names("plain").is_empty());
     }
 }

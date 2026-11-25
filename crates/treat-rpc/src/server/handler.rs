@@ -24,11 +24,13 @@ use validator::{Validate, ValidationErrors};
 
 /// A code of the runtime's own that displays as its wire name.
 ///
-/// The code of an `ApiError` is written by `Display`, which the `ApiErrorCode`
-/// derive takes from `#[code]` or the identifier and never from serde; the
-/// runtime's other refusals write [`WireEnum::as_str`](crate::WireEnum::as_str),
-/// which follows serde's `rename`/`rename_all`. Every `ApiError` the runtime
-/// builds carries its code in this wrapper, so a refusal spells the code the
+/// The code of an `ApiError` is written by `Display`, while the runtime's
+/// other refusals write [`WireEnum::as_str`](crate::WireEnum::as_str). The
+/// `ApiErrorCode` derive's `Display` reads the same names in the same order
+/// (`#[code]`, serde's `rename`/`rename_all`, the identifier), so for a
+/// derived registry the two agree; the wrapper is for a registry whose
+/// `Display` is written by hand and says something else. Every `ApiError` the
+/// runtime builds carries its code in it, so a refusal spells the code the
 /// same way whichever step built it, and the way a client reads it back by
 /// name.
 #[derive(Debug, Clone, Copy)]
@@ -83,8 +85,9 @@ impl<R: RuntimeCodes> Runtime<R> {
     ///
     /// The request must declare a JSON body (see [`Runtime::no_input`] for
     /// why), else it is refused at `415` without being read. A body that cannot
-    /// be read — over the router's body limit, say — is refused at the status
-    /// axum gave that (`413`), and one that does not parse as `T` at `422`,
+    /// be read is refused at the status axum gave that — `413` over the
+    /// router's body limit, `400` for one that broke off (the connection
+    /// dropped) — and one that does not parse as `T` at `422`,
     /// with a pointer to where it went wrong; a rule the parsed input breaks is
     /// [`Runtime::invalid_input`] at the envelope's `200`. Every one of them
     /// carries the registry's [`RuntimeCodes::INVALID_BODY`].
@@ -193,7 +196,8 @@ impl<R: RuntimeCodes> Runtime<R> {
     /// Read a JSON body as `T`, unvalidated.
     ///
     /// A body that cannot be read is refused at the status axum's rejection
-    /// carries (`413` for one over the router's limit); one that does not
+    /// carries (`413` for one over the router's limit, `400` for one that
+    /// broke off); one that does not
     /// parse, at `parse_status`, with the pointer `serde-path` found. Both with
     /// [`RuntimeCodes::INVALID_BODY`] rather than `treat`'s own `invalid_body`,
     /// so every code on the wire stays a registry value.
@@ -206,7 +210,8 @@ impl<R: RuntimeCodes> Runtime<R> {
     }
 
     /// The whole body of `request`; one that cannot be read is refused at the
-    /// status axum's rejection carries (`413` for one over the router's limit).
+    /// status axum's rejection carries (`413` for one over the router's limit,
+    /// `400` for one that broke off while being read).
     pub(crate) async fn read_body(request: Request) -> Result<Bytes, Refusal> {
         let read = Bytes::from_request(request, &()).await;
         read.map_err(|rejection| {
